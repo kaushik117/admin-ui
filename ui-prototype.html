@@ -1,0 +1,2321 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>k2pbot — Generic Chatbot Platform</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   THEME VARIABLES
+═══════════════════════════════════════════════════════════ */
+:root {
+  --radius: 10px;
+  --font: 'Inter', system-ui, sans-serif;
+  --transition: .18s ease;
+}
+[data-theme="dark"] {
+  --bg:        #0f1117;
+  --surface:   #1a1d27;
+  --surface2:  #22263a;
+  --surface3:  #2c3050;
+  --border:    #2e3250;
+  --accent:    #5b6ef5;
+  --accent2:   #7c8bff;
+  --green:     #22c55e;
+  --yellow:    #f59e0b;
+  --red:       #ef4444;
+  --text:      #e2e6f3;
+  --muted:     #7b82a8;
+  --user-bubble: #5b6ef5;
+  --user-text:   #fff;
+  --bot-bubble:  #1a1d27;
+  --bot-border:  #2e3250;
+  --shadow:    0 2px 16px rgba(0,0,0,.35);
+}
+[data-theme="light"] {
+  --bg:        #f0f2f8;
+  --surface:   #ffffff;
+  --surface2:  #f5f6fc;
+  --surface3:  #eaecf7;
+  --border:    #dde0f0;
+  --accent:    #5b6ef5;
+  --accent2:   #4458e8;
+  --green:     #16a34a;
+  --yellow:    #d97706;
+  --red:       #dc2626;
+  --text:      #1a1d2e;
+  --muted:     #6b7280;
+  --user-bubble: #5b6ef5;
+  --user-text:   #fff;
+  --bot-bubble:  #ffffff;
+  --bot-border:  #dde0f0;
+  --shadow:    0 2px 16px rgba(0,0,40,.08);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   RESET & BASE
+═══════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  font-size: 14px;
+  transition: background var(--transition), color var(--transition);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   TOP NAV
+═══════════════════════════════════════════════════════════ */
+.topnav {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0 20px; height: 52px; flex-shrink: 0;
+  box-shadow: var(--shadow);
+  transition: background var(--transition), border-color var(--transition);
+  z-index: 10;
+}
+.logo { font-weight: 800; font-size: 17px; color: var(--accent); letter-spacing: -.4px; }
+.logo span { color: var(--muted); font-weight: 500; }
+
+.nav-tabs { display: flex; gap: 4px; margin-left: 24px; }
+.nav-tab {
+  padding: 6px 16px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; color: var(--muted); border: none;
+  background: transparent; font-weight: 500;
+  transition: all var(--transition);
+}
+.nav-tab:hover { background: var(--surface2); color: var(--text); }
+.nav-tab.active { background: var(--accent); color: #fff; }
+
+.nav-right { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+
+/* Theme toggle */
+.theme-toggle {
+  display: flex; align-items: center; gap: 6px;
+  cursor: pointer; padding: 5px 10px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; font-size: 12px; color: var(--muted);
+  transition: all var(--transition);
+}
+.theme-toggle:hover { border-color: var(--accent); color: var(--text); }
+.theme-icon { font-size: 14px; }
+
+.status-pill {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 4px 10px; font-size: 11px; color: var(--muted);
+}
+.dot-green { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.avatar {
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN LAYOUT
+═══════════════════════════════════════════════════════════ */
+.main { display: flex; flex: 1; overflow: hidden; }
+#view-chat  { display: flex; width: 100%; overflow: hidden; }
+#view-admin { display: none; width: 100%; overflow: hidden; }
+
+/* ═══════════════════════════════════════════════════════════
+   SESSION SIDEBAR
+═══════════════════════════════════════════════════════════ */
+.sidebar {
+  width: 248px; flex-shrink: 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: background var(--transition);
+}
+.assistant-bar {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+}
+.assistant-bar label {
+  font-size: 10px; color: var(--muted); display: block;
+  margin-bottom: 3px; text-transform: uppercase; letter-spacing: .5px; font-weight: 700;
+}
+.assistant-select {
+  width: 100%; background: var(--surface2);
+  border: 1px solid var(--border); color: var(--text);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px;
+  cursor: pointer; outline: none;
+  transition: background var(--transition), border-color var(--transition);
+}
+.assistant-select:focus { border-color: var(--accent); }
+
+.sidebar-header {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.sidebar-header h3 { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+
+.btn-new {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--accent); color: #fff; border: none;
+  border-radius: 6px; padding: 4px 10px; font-size: 11px;
+  cursor: pointer; font-weight: 600;
+  transition: opacity var(--transition);
+}
+.btn-new:hover { opacity: .85; }
+
+.session-list { flex: 1; overflow-y: auto; padding: 6px; }
+.session-item {
+  padding: 9px 10px; border-radius: 8px;
+  cursor: pointer; margin-bottom: 2px;
+  transition: background var(--transition);
+}
+.session-item:hover { background: var(--surface2); }
+.session-item.active { background: var(--surface3); }
+.session-title { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-meta { font-size: 10px; color: var(--muted); margin-top: 2px; display: flex; gap: 5px; align-items: center; }
+.badge { font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700; }
+.badge-active  { background: rgba(34,197,94,.15); color: var(--green); }
+.badge-closed  { background: rgba(107,114,128,.12); color: var(--muted); }
+.badge-expired { background: rgba(239,68,68,.1); color: var(--red); }
+
+/* ═══════════════════════════════════════════════════════════
+   CHAT AREA
+═══════════════════════════════════════════════════════════ */
+.chat-area {
+  flex: 1; display: flex; flex-direction: column;
+  overflow: hidden; background: var(--bg);
+  border-right: 1px solid var(--border);
+  transition: background var(--transition);
+  min-width: 0;
+}
+.chat-topbar {
+  padding: 10px 18px; border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  display: flex; align-items: center; gap: 10px;
+  flex-shrink: 0;
+  transition: background var(--transition);
+}
+.chat-topbar-info { flex: 1; min-width: 0; }
+.chat-topbar-title { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-topbar-sub { font-size: 11px; color: var(--muted); margin-top: 1px; }
+.topbar-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.btn-icon {
+  width: 30px; height: 30px; border-radius: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; transition: all var(--transition);
+}
+.btn-icon:hover { background: var(--surface3); color: var(--text); border-color: var(--accent); }
+
+.messages {
+  flex: 1; overflow-y: auto; padding: 20px 20px;
+  display: flex; flex-direction: column; gap: 18px;
+}
+
+.msg-row { display: flex; gap: 10px; }
+.msg-row.user { flex-direction: row-reverse; justify-content: flex-start; }
+.msg-row.assistant { justify-content: flex-start; }
+
+.msg-avatar {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 700; margin-top: 2px;
+}
+.user-av  { background: var(--accent); color: #fff; }
+.bot-av   { background: var(--surface3); color: var(--accent); font-size: 14px; }
+
+.msg-body { display: flex; flex-direction: column; gap: 4px; max-width: 75%; min-width: 0; }
+.msg-meta {
+  font-size: 10px; color: var(--muted);
+  display: flex; gap: 6px; align-items: center;
+}
+.msg-row.user .msg-meta { flex-direction: row-reverse; }
+
+.msg-bubble {
+  padding: 10px 14px; border-radius: 14px;
+  line-height: 1.65; font-size: 13px; word-break: break-word;
+}
+.user .msg-bubble {
+  background: var(--user-bubble); color: var(--user-text);
+  border-bottom-right-radius: 4px;
+}
+.assistant .msg-bubble {
+  background: var(--bot-bubble); color: var(--text);
+  border: 1px solid var(--bot-border);
+  border-bottom-left-radius: 4px;
+  box-shadow: var(--shadow);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+/* Citations inline */
+.msg-citations {
+  display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px;
+}
+.cite-chip {
+  display: flex; align-items: center; gap: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 20px; padding: 3px 10px; font-size: 10px;
+  color: var(--accent); cursor: pointer;
+  transition: all var(--transition);
+}
+.cite-chip:hover { background: var(--surface3); border-color: var(--accent); }
+
+/* Tool tags */
+.msg-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.tool-chip {
+  display: flex; align-items: center; gap: 4px;
+  background: transparent; border: 1px solid var(--border);
+  border-radius: 5px; padding: 2px 8px; font-size: 10px; color: var(--muted);
+}
+.tool-dot { width: 5px; height: 5px; border-radius: 50%; }
+.tool-ok { background: var(--green); }
+.tool-fail { background: var(--red); }
+
+.model-badge {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 6px; font-size: 10px; color: var(--muted);
+}
+
+/* Typing */
+.typing-indicator { display: flex; gap: 4px; align-items: center; padding: 12px 14px; }
+.typing-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--muted); animation: bounce .9s infinite;
+}
+.typing-dot:nth-child(2) { animation-delay: .15s; }
+.typing-dot:nth-child(3) { animation-delay: .3s; }
+@keyframes bounce { 0%,80%,100%{ transform:scale(1); } 40%{ transform:scale(1.5); } }
+
+/* Input */
+.input-area {
+  padding: 12px 16px; border-top: 1px solid var(--border);
+  background: var(--surface); flex-shrink: 0;
+  transition: background var(--transition);
+}
+.input-row {
+  display: flex; gap: 8px; align-items: flex-end;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 8px 12px;
+  transition: border-color var(--transition);
+}
+.input-row:focus-within { border-color: var(--accent); }
+.msg-input {
+  flex: 1; background: transparent; border: none;
+  color: var(--text); font-size: 13px; resize: none; outline: none;
+  font-family: var(--font); min-height: 20px; max-height: 100px; line-height: 1.5;
+}
+.msg-input::placeholder { color: var(--muted); }
+.send-btn {
+  width: 32px; height: 32px; border-radius: 8px;
+  background: var(--accent); border: none; color: #fff;
+  cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 14px; flex-shrink: 0;
+  transition: opacity var(--transition);
+}
+.send-btn:hover { opacity: .85; }
+.send-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+.input-footer {
+  display: flex; align-items: center; margin-top: 6px; gap: 10px;
+}
+.input-hint-text { font-size: 10px; color: var(--muted); }
+.stream-row { margin-left: auto; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.stream-label { font-size: 11px; color: var(--muted); }
+.toggle-pill {
+  width: 32px; height: 18px; border-radius: 9px;
+  background: var(--surface3); position: relative; cursor: pointer;
+  transition: background .2s; border: 1px solid var(--border);
+}
+.toggle-pill.on { background: var(--accent); border-color: var(--accent); }
+.toggle-pill::after {
+  content: ''; position: absolute; top: 2px; left: 2px;
+  width: 12px; height: 12px; border-radius: 50%; background: #fff;
+  transition: left .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle-pill.on::after { left: 16px; }
+
+/* ═══════════════════════════════════════════════════════════
+   CONTEXT PANEL  (right of chat)
+═══════════════════════════════════════════════════════════ */
+.context-panel {
+  width: 320px; flex-shrink: 0;
+  background: var(--surface);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  transition: background var(--transition);
+}
+
+/* Panel tab bar */
+.ctx-tabs {
+  display: flex; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; overflow-x: auto;
+}
+.ctx-tab {
+  flex: 1; padding: 10px 4px; text-align: center;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  cursor: pointer; border-bottom: 2px solid transparent;
+  white-space: nowrap; transition: all var(--transition);
+  min-width: 60px;
+}
+.ctx-tab:hover { color: var(--text); }
+.ctx-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.ctx-body { flex: 1; overflow-y: auto; }
+
+/* ── Summary Tab ── */
+.summary-section { padding: 14px; }
+.section-label {
+  font-size: 10px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px;
+  margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+}
+.section-label .badge-new {
+  background: var(--accent); color: #fff;
+  font-size: 9px; padding: 1px 5px; border-radius: 3px; font-weight: 700;
+}
+
+.summary-box {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px; font-size: 12px; line-height: 1.65;
+  color: var(--text); transition: background var(--transition);
+}
+.summary-empty { color: var(--muted); font-style: italic; font-size: 12px; }
+
+/* Key facts */
+.fact-grid { display: flex; flex-direction: column; gap: 5px; }
+.fact-row {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 10px;
+  transition: background var(--transition);
+}
+.fact-key { font-size: 11px; color: var(--muted); }
+.fact-val { font-size: 11px; font-weight: 600; color: var(--text); text-align: right; max-width: 150px; }
+.fact-val.green { color: var(--green); }
+.fact-val.yellow { color: var(--yellow); }
+.fact-val.blue { color: var(--accent); }
+
+/* Citations panel */
+.cite-card {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+  cursor: pointer; transition: all var(--transition);
+}
+.cite-card:hover { border-color: var(--accent); }
+.cite-card-title { font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.cite-card-meta { font-size: 10px; color: var(--muted); margin-top: 3px; }
+.cite-card-snippet {
+  font-size: 11px; color: var(--muted); margin-top: 6px;
+  line-height: 1.5; border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+
+/* Stats tab */
+.stats-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 14px; }
+.mini-stat {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px 10px; text-align: center;
+  transition: background var(--transition);
+}
+.mini-stat-val { font-size: 20px; font-weight: 700; line-height: 1; }
+.mini-stat-label { font-size: 10px; color: var(--muted); margin-top: 4px; }
+
+.progress-row { padding: 0 14px; margin-bottom: 10px; }
+.progress-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+.progress-bar { background: var(--surface3); border-radius: 4px; height: 5px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+
+.tool-exec-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; margin-bottom: 6px;
+  transition: background var(--transition);
+}
+.tool-exec-name { font-size: 12px; font-weight: 500; }
+.tool-exec-meta { font-size: 10px; color: var(--muted); margin-top: 2px; }
+.tool-exec-status { font-size: 11px; font-weight: 700; }
+
+/* ═══════════════════════════════════════════════════════════
+   ADMIN VIEW
+═══════════════════════════════════════════════════════════ */
+.admin-layout { display: flex; width: 100%; overflow: hidden; }
+.admin-sidebar {
+  width: 210px; flex-shrink: 0;
+  background: var(--surface); border-right: 1px solid var(--border);
+  padding: 14px 0; transition: background var(--transition);
+}
+.admin-nav-label {
+  font-size: 10px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px; padding: 6px 14px;
+}
+.admin-nav-item {
+  display: flex; align-items: center; gap: 9px; padding: 8px 14px;
+  cursor: pointer; font-size: 12px; color: var(--muted);
+  border-left: 2px solid transparent; transition: all var(--transition);
+}
+.admin-nav-item:hover { background: var(--surface2); color: var(--text); }
+.admin-nav-item.active { background: rgba(91,110,245,.07); color: var(--accent); border-left-color: var(--accent); }
+
+.admin-main { flex: 1; overflow-y: auto; padding: 24px 28px; }
+.admin-header { margin-bottom: 20px; }
+.admin-header h2 { font-size: 18px; font-weight: 700; }
+.admin-header p { font-size: 12px; color: var(--muted); margin-top: 3px; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
+  box-shadow: var(--shadow); transition: background var(--transition), border-color var(--transition);
+}
+.card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 14px;
+}
+.card-title { font-size: 13px; font-weight: 700; display: flex; align-items: center; gap: 7px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; margin-bottom: 16px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow);
+  transition: background var(--transition);
+}
+.stat-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.stat-val   { font-size: 22px; font-weight: 700; margin: 5px 0 2px; }
+.stat-delta { font-size: 10px; color: var(--green); }
+.stat-neg   { color: var(--red); }
+
+.config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.config-block {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 12px;
+  transition: background var(--transition);
+}
+.config-block h5 {
+  font-size: 10px; font-weight: 700; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .4px; margin-bottom: 9px;
+}
+.kv-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 5px; font-size: 11px; }
+.kv-key { color: var(--muted); }
+.kv-val { font-weight: 600; text-align: right; max-width: 130px; word-break: break-all; }
+.kv-green { color: var(--green); }
+.kv-red   { color: var(--red); }
+.kv-blue  { color: var(--accent); }
+.kv-yellow { color: var(--yellow); }
+
+/* Table */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+th {
+  text-align: left; padding: 9px 10px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .4px; color: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+td { padding: 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:hover td { background: var(--surface2); }
+tr:last-child td { border-bottom: none; }
+
+/* Cache */
+.cache-entry {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 14px; margin-bottom: 7px;
+  transition: background var(--transition);
+}
+.cache-entry-title { font-size: 12px; font-weight: 600; }
+.cache-entry-sub   { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: none; transition: opacity var(--transition);
+}
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-ghost {
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border);
+}
+.btn-ghost:hover { color: var(--text); background: var(--surface2); opacity: 1; }
+.btn-danger { background: rgba(239,68,68,.1); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
+.btn-danger:hover { background: rgba(239,68,68,.18); opacity: 1; }
+.btn-sm { padding: 3px 8px; font-size: 10px; }
+
+/* Pills */
+.pill { display: inline-block; padding: 2px 7px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+.pill-active  { background: rgba(34,197,94,.12);  color: var(--green); }
+.pill-closed  { background: rgba(107,114,128,.1); color: var(--muted); }
+.pill-expired { background: rgba(239,68,68,.1);   color: var(--red); }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 20px; right: 20px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 16px; font-size: 12px;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  opacity: 0; transform: translateY(6px);
+  transition: all .22s; pointer-events: none; z-index: 9999;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+
+/* Misc */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+hr.div { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+code {
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; font-size: 11px; font-family: monospace;
+}
+
+/* ── Modal ── */
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; backdrop-filter: blur(2px);
+}
+.modal-backdrop.hidden { display: none; }
+.modal {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; width: 560px; max-width: 94vw; max-height: 88vh;
+  display: flex; flex-direction: column; box-shadow: 0 8px 40px rgba(0,0,0,.5);
+  overflow: hidden;
+}
+.modal-header {
+  padding: 16px 20px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-title { font-size: 14px; font-weight: 700; }
+.modal-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+}
+.modal-close:hover { color: var(--text); }
+.modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.modal-footer {
+  padding: 14px 20px; border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+
+/* Form fields */
+.form-group { margin-bottom: 14px; }
+.form-label {
+  display: block; font-size: 11px; font-weight: 700;
+  color: var(--muted); text-transform: uppercase; letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+.form-label span { color: var(--red); margin-left: 2px; font-size: 10px; }
+.form-input, .form-select, .form-textarea {
+  width: 100%; background: var(--surface2); border: 1px solid var(--border);
+  border-radius: 7px; padding: 7px 10px; color: var(--text);
+  font-size: 12px; outline: none; font-family: var(--font);
+  transition: border-color var(--transition);
+}
+.form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+.form-textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-hint { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+/* Toggle switch in forms */
+.form-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border);
+}
+.form-toggle-row:last-child { border-bottom: none; }
+.form-toggle-label { font-size: 12px; }
+.form-toggle-sub { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+/* Tab bar for policy pages */
+.policy-tabs {
+  display: flex; gap: 4px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.policy-tab {
+  padding: 5px 12px; border-radius: 6px; font-size: 12px; font-weight: 600;
+  cursor: pointer; border: 1px solid var(--border);
+  color: var(--muted); background: var(--surface2);
+  transition: all var(--transition);
+}
+.policy-tab:hover { color: var(--text); }
+.policy-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+/* Priority badge */
+.priority-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--surface3); font-size: 11px; font-weight: 700;
+  color: var(--accent);
+}
+
+/* Audit row colour */
+.ok-text   { color: var(--green); font-weight: 600; }
+.fail-text { color: var(--red);   font-weight: 600; }
+.warn-text { color: var(--yellow);font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- ─── TOP NAV ──────────────────────────────────────────── -->
+<nav class="topnav">
+  <div class="logo">k2p<span>bot</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchView('chat')">💬 Chat</button>
+    <button class="nav-tab" onclick="switchView('admin')">⚙️ Admin</button>
+  </div>
+  <div class="nav-right">
+    <div class="status-pill"><div class="dot-green"></div>localhost:8080</div>
+    <div class="theme-toggle" onclick="toggleTheme()" id="themeBtn">
+      <span class="theme-icon" id="themeIcon">🌙</span>
+      <span id="themeLabel">Dark</span>
+    </div>
+    <div class="avatar">KP</div>
+  </div>
+</nav>
+
+<div class="main">
+
+<!-- ═══════════════════════════════════════════════════════
+     CHAT VIEW
+═══════════════════════════════════════════════════════ -->
+<div id="view-chat">
+
+  <!-- Session Sidebar -->
+  <aside class="sidebar">
+    <div class="assistant-bar">
+      <label>Assistant</label>
+      <select class="assistant-select">
+        <option>🏦 Loan Advisor</option>
+        <option>🎧 Support Bot</option>
+        <option>👥 HR Assistant</option>
+      </select>
+    </div>
+    <div class="sidebar-header">
+      <h3>Sessions</h3>
+      <button class="btn-new" onclick="newSession()">+ New</button>
+    </div>
+    <div class="session-list" id="sessionList"></div>
+  </aside>
+
+  <!-- Chat Area -->
+  <div class="chat-area">
+    <div class="chat-topbar">
+      <div class="chat-topbar-info">
+        <div class="chat-topbar-title" id="chatTitle">Home Loan Eligibility</div>
+        <div class="chat-topbar-sub" id="chatSub">sess-abc123 · user-xyz · loan-advisor · en-IN</div>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn-icon" title="Copy session ID" onclick="showToast('📋 sess-abc123 copied')">📋</button>
+        <button class="btn-icon" title="Clear" onclick="showToast('🗑️ Session cleared')">🗑️</button>
+      </div>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="input-area">
+      <div class="input-row">
+        <textarea class="msg-input" id="msgInput" rows="1"
+          placeholder="Type your message…"
+          onkeydown="handleKey(event)"
+          oninput="autoResize(this)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
+      </div>
+      <div class="input-footer">
+        <span class="input-hint-text">⏎ Send &nbsp;⇧⏎ Newline</span>
+        <div class="stream-row" onclick="toggleStream()">
+          <div class="toggle-pill" id="streamToggle"></div>
+          <span class="stream-label" id="streamLabel">Streaming: OFF</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── CONTEXT PANEL ─────────────────────────────────── -->
+  <aside class="context-panel">
+    <div class="ctx-tabs">
+      <div class="ctx-tab active" onclick="switchCtx('summary',this)">📋 Summary</div>
+      <div class="ctx-tab" onclick="switchCtx('facts',this)">🔑 Key Facts</div>
+      <div class="ctx-tab" onclick="switchCtx('sources',this)">📚 Sources</div>
+      <div class="ctx-tab" onclick="switchCtx('stats',this)">📊 Stats</div>
+    </div>
+
+    <div class="ctx-body">
+
+      <!-- ── Summary ── -->
+      <div id="ctx-summary">
+        <div class="summary-section">
+          <div class="section-label">
+            Conversation Summary
+            <span class="badge-new" id="summaryBadge" style="display:none">Updated</span>
+          </div>
+          <div class="summary-box" id="summaryText">
+            <span class="summary-empty">Summary will appear here after the first assistant reply.</span>
+          </div>
+        </div>
+        <hr class="div" style="margin:0 14px">
+        <div class="summary-section">
+          <div class="section-label">Topics Discussed</div>
+          <div id="topicTags" style="display:flex;flex-wrap:wrap;gap:5px">
+            <span style="font-size:11px;color:var(--muted)">None yet</span>
+          </div>
+        </div>
+        <hr class="div" style="margin:0 14px">
+        <div class="summary-section">
+          <div class="section-label">Last Response</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px;text-align:center;transition:background var(--transition)">
+              <div style="font-size:16px;font-weight:700" id="sp-model">—</div>
+              <div style="font-size:10px;color:var(--muted)">Model</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px;text-align:center;transition:background var(--transition)">
+              <div style="font-size:16px;font-weight:700" id="sp-latency">—</div>
+              <div style="font-size:10px;color:var(--muted)">Latency</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px;text-align:center;transition:background var(--transition)">
+              <div style="font-size:16px;font-weight:700;color:var(--green)" id="sp-intok">—</div>
+              <div style="font-size:10px;color:var(--muted)">In Tokens</div>
+            </div>
+            <div style="background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px;text-align:center;transition:background var(--transition)">
+              <div style="font-size:16px;font-weight:700;color:var(--accent)" id="sp-outtok">—</div>
+              <div style="font-size:10px;color:var(--muted)">Out Tokens</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Key Facts ── -->
+      <div id="ctx-facts" style="display:none">
+        <div class="summary-section">
+          <div class="section-label">Extracted from Conversation</div>
+          <div class="fact-grid" id="factGrid">
+            <div style="font-size:12px;color:var(--muted);font-style:italic">No facts extracted yet.</div>
+          </div>
+        </div>
+        <hr class="div" style="margin:0 14px">
+        <div class="summary-section">
+          <div class="section-label">Pipeline Flags</div>
+          <div class="fact-grid" id="pipelineFlags">
+            <div class="fact-row"><span class="fact-key">RAG Used</span><span class="fact-val" id="pf-rag">—</span></div>
+            <div class="fact-row"><span class="fact-key">Memory Used</span><span class="fact-val" id="pf-mem">—</span></div>
+            <div class="fact-row"><span class="fact-key">Tools Used</span><span class="fact-val" id="pf-tools">—</span></div>
+            <div class="fact-row"><span class="fact-key">Knowledge Base</span><span class="fact-val blue" id="pf-kb">—</span></div>
+            <div class="fact-row"><span class="fact-key">Prompt Version</span><span class="fact-val" id="pf-pver">—</span></div>
+            <div class="fact-row"><span class="fact-key">Finish Reason</span><span class="fact-val" id="pf-fin">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Sources ── -->
+      <div id="ctx-sources" style="display:none">
+        <div class="summary-section">
+          <div class="section-label">All Session Citations</div>
+          <div id="allCitations">
+            <div style="font-size:12px;color:var(--muted);font-style:italic">No citations yet.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Stats ── -->
+      <div id="ctx-stats" style="display:none">
+        <div class="stats-grid-2">
+          <div class="mini-stat">
+            <div class="mini-stat-val" id="st-msgs">0</div>
+            <div class="mini-stat-label">Messages</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val" id="st-turns">0</div>
+            <div class="mini-stat-label">Turns</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val" style="color:var(--green)" id="st-intok">0</div>
+            <div class="mini-stat-label">Total In Tokens</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val" style="color:var(--accent)" id="st-outtok">0</div>
+            <div class="mini-stat-label">Total Out Tokens</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val" id="st-cites">0</div>
+            <div class="mini-stat-label">Citations</div>
+          </div>
+          <div class="mini-stat">
+            <div class="mini-stat-val" id="st-tools">0</div>
+            <div class="mini-stat-label">Tool Calls</div>
+          </div>
+        </div>
+
+        <div class="progress-row">
+          <div class="progress-label"><span>Avg Latency</span><span id="st-lat">—</span></div>
+          <div class="progress-bar"><div class="progress-fill" id="st-lat-bar" style="width:0%"></div></div>
+        </div>
+
+        <div class="summary-section" style="padding-top:0">
+          <div class="section-label">Tool Executions This Session</div>
+          <div id="toolExecList">
+            <div style="font-size:12px;color:var(--muted);font-style:italic">No tool calls yet.</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /ctx-body -->
+  </aside>
+
+</div><!-- /view-chat -->
+
+
+<!-- ═══════════════════════════════════════════════════════
+     ADMIN VIEW
+═══════════════════════════════════════════════════════ -->
+<div id="view-admin">
+<div class="admin-layout">
+
+  <aside class="admin-sidebar" style="overflow-y:auto">
+    <div class="admin-nav-label">Overview</div>
+    <div class="admin-nav-item active" onclick="adminNav('dashboard',this)">📊 Dashboard</div>
+
+    <div class="admin-nav-label" style="margin-top:8px">Assistants</div>
+    <div class="admin-nav-item" onclick="adminNav('assistants',this)">🤖 Assistants</div>
+    <div class="admin-nav-item" onclick="adminNav('prompt-templates',this)">📝 Prompt Templates</div>
+    <div class="admin-nav-item" onclick="adminNav('model-routes',this)">🔀 Model Routes</div>
+    <div class="admin-nav-item" onclick="adminNav('knowledge-bases',this)">📚 Knowledge Bases</div>
+    <div class="admin-nav-item" onclick="adminNav('tenant-overrides',this)">🏢 Tenant Overrides</div>
+
+    <div class="admin-nav-label" style="margin-top:8px">Policies</div>
+    <div class="admin-nav-item" onclick="adminNav('memory-policy',this)">🧠 Memory Policy</div>
+    <div class="admin-nav-item" onclick="adminNav('rag-policy',this)">🗃️ RAG Policy</div>
+    <div class="admin-nav-item" onclick="adminNav('tool-policy',this)">🔧 Tool Policy</div>
+    <div class="admin-nav-item" onclick="adminNav('safety-policy',this)">🛡️ Safety Policy</div>
+    <div class="admin-nav-item" onclick="adminNav('response-policy',this)">💬 Response Policy</div>
+
+    <div class="admin-nav-label" style="margin-top:8px">Config</div>
+    <div class="admin-nav-item" onclick="adminNav('config',this)">🔍 Config Inspector</div>
+    <div class="admin-nav-item" onclick="adminNav('cache',this)">🗄️ Cache Management</div>
+
+    <div class="admin-nav-label" style="margin-top:8px">Conversations</div>
+    <div class="admin-nav-item" onclick="adminNav('sessions',this)">💬 Sessions</div>
+    <div class="admin-nav-item" onclick="adminNav('messages',this)">📨 Messages</div>
+
+    <div class="admin-nav-label" style="margin-top:8px">Monitoring</div>
+    <div class="admin-nav-item" onclick="adminNav('execution-monitor',this)">⚡ Execution Monitor</div>
+    <div class="admin-nav-item" onclick="adminNav('tool-audit',this)">🔧 Tool Audit</div>
+    <div class="admin-nav-item" onclick="adminNav('rag-audit',this)">🗃️ RAG Audit</div>
+  </aside>
+
+  <div class="admin-main" id="adminMain"></div>
+
+</div>
+</div>
+
+</div><!-- /main -->
+
+<!-- Modal -->
+<div class="modal-backdrop hidden" id="modalBackdrop" onclick="closeModalBackdrop(event)">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Modal</div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modalSave" onclick="saveModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"><span id="toastMsg">Done</span></div>
+
+<!-- ═══════════════════════════════════════════════════════
+     JAVASCRIPT
+═══════════════════════════════════════════════════════ -->
+<script>
+// ── State ──────────────────────────────────────────────
+let isDark = true;
+let streaming = false;
+let activeCtx = 'summary';
+let currentSession = 'sess-abc123';
+
+const SESSIONS = [
+  {id:'sess-abc123', title:'Home Loan Eligibility', assistant:'loan-advisor', status:'ACTIVE', user:'user-xyz', locale:'en-IN', channel:'web'},
+  {id:'sess-def456', title:'EMI Calculation Query',  assistant:'loan-advisor', status:'ACTIVE', user:'user-xyz', locale:'en-IN', channel:'mobile'},
+  {id:'sess-ghi789', title:'Document Submission',    assistant:'support-bot', status:'CLOSED', user:'user-abc', locale:'en-US', channel:'web'},
+  {id:'sess-jkl012', title:'Leave Policy Question',  assistant:'hr-assistant',status:'EXPIRED',user:'user-lmn', locale:'en-IN', channel:'web'},
+];
+
+const MESSAGES = {
+  'sess-abc123': [
+    {role:'user', content:'What are the eligibility criteria for a home loan?', ts:'10:01 AM'},
+    {role:'assistant', content:'To be eligible for a home loan at RAHI, you must meet the following criteria:\n\n• **Age:** Between 21 and 65 years at loan maturity\n• **Income:** Minimum net monthly income of ₹25,000 (salaried) or ₹30,000 (self-employed)\n• **CIBIL Score:** 700 or above recommended\n• **Employment:** Minimum 2 years of continuous employment\n• **Property:** Must be within approved geographies', ts:'10:01 AM', model:'gpt-4o', provider:'openai', finish:'stop', usage:{in:312,out:98,lat:1240}, citations:[{id:'doc-412',type:'PDF',title:'Home Loan Policy v3.2',snippet:'Applicants must be between 21 and 65 years of age at loan maturity…',location:'Page 12'}], tools:[{name:'loan-eligibility-check',type:'LOCAL_BEAN',ok:true,lat:320}], meta:{rag:true,mem:true,tools:true,kb:'kb-home-loans',pver:'v2.1.0'}},
+    {role:'user', content:'I am 32 years old, earning ₹60,000/month with a CIBIL score of 740. Am I eligible?', ts:'10:03 AM'},
+    {role:'assistant', content:'Great news! Based on your profile:\n\n✅ **Age (32):** Within the eligible range (21–65)\n✅ **Income (₹60,000/mo):** Well above the ₹25,000 minimum\n✅ **CIBIL Score (740):** Above the recommended 700 threshold\n\nYou appear **eligible** for a home loan. You may qualify for approximately **₹45–50 lakhs** depending on property value and existing liabilities.\n\nShall I run a detailed eligibility report?', ts:'10:03 AM', model:'gpt-4o', provider:'openai', finish:'stop', usage:{in:428,out:112,lat:980}, citations:[{id:'doc-413',type:'PDF',title:'Home Loan Policy v3.2',snippet:'Maximum loan amount is 60× the net monthly income, subject to LTV limits…',location:'Page 18'}], tools:[{name:'loan-eligibility-check',type:'LOCAL_BEAN',ok:true,lat:290},{name:'rate-calculator',type:'REST',ok:true,lat:185}], meta:{rag:true,mem:true,tools:true,kb:'kb-home-loans',pver:'v2.1.0'}},
+  ],
+  'sess-def456': [
+    {role:'user', content:'What will be the EMI for a ₹40 lakh loan over 20 years at 8.5%?', ts:'09:15 AM'},
+    {role:'assistant', content:'For a home loan of **₹40,00,000** at **8.5% p.a.** over **20 years (240 months)**:\n\n📊 **Monthly EMI: ₹34,713**\n\n**Breakdown:**\n• Total Amount Payable: ₹83,31,120\n• Total Interest: ₹43,31,120\n• Principal: ₹40,00,000\n\nWould you like to see an amortization schedule or compare with other tenures?', ts:'09:15 AM', model:'gpt-4o', provider:'openai', finish:'stop', usage:{in:198,out:87,lat:820}, citations:[], tools:[{name:'rate-calculator',type:'REST',ok:true,lat:210}], meta:{rag:false,mem:true,tools:true,kb:null,pver:'v2.1.0'}},
+  ],
+};
+
+// Accumulated session citations and tool calls (across all msgs)
+const SESSION_CITATIONS = {};
+const SESSION_TOOLS = {};
+const SESSION_STATS = {};
+
+function initSessionData(id) {
+  const msgs = MESSAGES[id] || [];
+  let inTok=0, outTok=0, totalLat=0, latCount=0, cites=[], tools=[];
+  msgs.forEach(m => {
+    if (m.role==='assistant') {
+      if (m.usage) { inTok+=m.usage.in; outTok+=m.usage.out; totalLat+=m.usage.lat; latCount++; }
+      if (m.citations) cites.push(...m.citations);
+      if (m.tools) tools.push(...m.tools);
+    }
+  });
+  SESSION_CITATIONS[id] = cites;
+  SESSION_TOOLS[id] = tools;
+  const turns = msgs.filter(m=>m.role==='user').length;
+  SESSION_STATS[id] = {msgs:msgs.length, turns, inTok, outTok, avgLat: latCount? Math.round(totalLat/latCount):0, cites:cites.length, toolCalls:tools.length};
+}
+Object.keys(MESSAGES).forEach(initSessionData);
+
+// ── Theme ──────────────────────────────────────────────
+function toggleTheme() {
+  isDark = !isDark;
+  document.documentElement.setAttribute('data-theme', isDark?'dark':'light');
+  document.getElementById('themeIcon').textContent = isDark ? '🌙' : '☀️';
+  document.getElementById('themeLabel').textContent = isDark ? 'Dark' : 'Light';
+}
+
+// ── View Switch ────────────────────────────────────────
+function switchView(v) {
+  document.getElementById('view-chat').style.display  = v==='chat'  ? 'flex' : 'none';
+  document.getElementById('view-admin').style.display = v==='admin' ? 'flex' : 'none';
+  document.querySelectorAll('.nav-tab').forEach((t,i) =>
+    t.classList.toggle('active', (i===0&&v==='chat')||(i===1&&v==='admin'))
+  );
+  if (v==='admin') adminNav('dashboard', document.querySelector('.admin-nav-item'));
+}
+
+// ── Sessions ───────────────────────────────────────────
+function renderSessions() {
+  document.getElementById('sessionList').innerHTML = SESSIONS.map(s => `
+    <div class="session-item ${s.id===currentSession?'active':''}" onclick="selectSession('${s.id}')">
+      <div class="session-title">${s.title}</div>
+      <div class="session-meta">
+        <span class="badge badge-${s.status.toLowerCase()}">${s.status}</span>
+        <span>${s.assistant}</span>
+      </div>
+    </div>`).join('');
+}
+
+function selectSession(id) {
+  currentSession = id;
+  const s = SESSIONS.find(x=>x.id===id);
+  document.getElementById('chatTitle').textContent = s.title;
+  document.getElementById('chatSub').textContent = `${s.id} · ${s.user} · ${s.assistant} · ${s.locale}`;
+  renderSessions();
+  renderMessages();
+  updateContextPanel();
+}
+
+function newSession() {
+  const id = 'sess-' + Math.random().toString(36).substr(2,6);
+  SESSIONS.unshift({id, title:'New Conversation', assistant:'loan-advisor', status:'ACTIVE', user:'user-xyz', locale:'en-IN', channel:'web'});
+  MESSAGES[id] = [];
+  SESSION_CITATIONS[id] = [];
+  SESSION_TOOLS[id] = [];
+  SESSION_STATS[id] = {msgs:0, turns:0, inTok:0, outTok:0, avgLat:0, cites:0, toolCalls:0};
+  selectSession(id);
+}
+
+// ── Messages ───────────────────────────────────────────
+function renderMessages() {
+  const container = document.getElementById('messages');
+  const msgs = MESSAGES[currentSession] || [];
+  if (!msgs.length) {
+    container.innerHTML = `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);padding:40px">
+      <div style="font-size:36px">💬</div>
+      <div style="font-size:13px">Start a conversation</div>
+      <div style="font-size:11px">Messages will appear here</div>
+    </div>`;
+    return;
+  }
+  container.innerHTML = msgs.map((m,i) => {
+    const isUser = m.role==='user';
+    const citesHtml = m.citations&&m.citations.length ? `
+      <div class="msg-citations">
+        ${m.citations.map(c=>`
+          <div class="cite-chip" onclick="showToast('📄 ${c.title} · ${c.location}')">
+            📄 ${c.title}
+          </div>`).join('')}
+      </div>` : '';
+    const toolsHtml = m.tools&&m.tools.length ? `
+      <div class="msg-tools">
+        ${m.tools.map(t=>`
+          <div class="tool-chip">
+            <span class="tool-dot ${t.ok?'tool-ok':'tool-fail'}"></span>
+            ${t.name} · ${t.lat}ms
+          </div>`).join('')}
+      </div>` : '';
+    const modelBadge = !isUser&&m.model ? `<span class="model-badge">${m.model}</span>` : '';
+    return `
+      <div class="msg-row ${m.role}">
+        <div class="msg-avatar ${isUser?'user-av':'bot-av'}">${isUser?'U':'🤖'}</div>
+        <div class="msg-body">
+          <div class="msg-meta">
+            <span>${isUser?'You':'Assistant'}</span>${modelBadge}<span>${m.ts}</span>
+          </div>
+          <div class="msg-bubble">${fmt(m.content)}</div>
+          ${citesHtml}${toolsHtml}
+        </div>
+      </div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function fmt(t) {
+  return t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
+}
+
+// ── Context Panel ──────────────────────────────────────
+function switchCtx(name, el) {
+  activeCtx = name;
+  ['summary','facts','sources','stats'].forEach(p =>
+    document.getElementById('ctx-'+p).style.display = p===name ? '' : 'none'
+  );
+  document.querySelectorAll('.ctx-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  updateContextPanel();
+}
+
+const SUMMARIES = {
+  'sess-abc123': 'The user is enquiring about home loan eligibility. They have shared their profile: age 32, net income ₹60,000/month, CIBIL score 740. The assistant confirmed eligibility and estimated a loan limit of ₹45–50 lakhs based on RAHI\'s policy document.',
+  'sess-def456': 'The user requested an EMI calculation for a ₹40 lakh home loan at 8.5% p.a. over 20 years. The assistant computed the monthly EMI as ₹34,713 with a total outflow of ₹83.3 lakhs.',
+  'sess-ghi789': 'Session closed. User was seeking help with document submission for a loan application.',
+  'sess-jkl012': 'Session expired. HR leave policy was the subject of discussion.',
+};
+
+const FACTS_MAP = {
+  'sess-abc123': [
+    {key:'User Age', val:'32 years', cls:''},
+    {key:'Net Monthly Income', val:'₹60,000', cls:'green'},
+    {key:'CIBIL Score', val:'740', cls:'green'},
+    {key:'Eligibility', val:'✅ Eligible', cls:'green'},
+    {key:'Estimated Loan Limit', val:'₹45–50 lakhs', cls:'blue'},
+    {key:'Min CIBIL Required', val:'700', cls:'yellow'},
+    {key:'Min Income Required', val:'₹25,000/mo', cls:''},
+    {key:'Age Range', val:'21–65 years', cls:''},
+  ],
+  'sess-def456': [
+    {key:'Loan Amount', val:'₹40,00,000', cls:'blue'},
+    {key:'Interest Rate', val:'8.5% p.a.', cls:'yellow'},
+    {key:'Tenure', val:'20 years', cls:''},
+    {key:'Monthly EMI', val:'₹34,713', cls:'green'},
+    {key:'Total Payable', val:'₹83,31,120', cls:''},
+    {key:'Total Interest', val:'₹43,31,120', cls:'yellow'},
+  ],
+};
+
+const TOPICS_MAP = {
+  'sess-abc123': ['Home Loan','Eligibility Criteria','CIBIL Score','Income Verification','Loan Amount'],
+  'sess-def456': ['EMI Calculation','Interest Rate','Loan Tenure','Amortization'],
+  'sess-ghi789': ['Document Submission','KYC'],
+  'sess-jkl012': ['Leave Policy','HR'],
+};
+
+function updateContextPanel() {
+  const id = currentSession;
+  const msgs = MESSAGES[id] || [];
+  const lastBot = [...msgs].reverse().find(m => m.role==='assistant');
+  const stats = SESSION_STATS[id] || {};
+  const cites = SESSION_CITATIONS[id] || [];
+  const tools = SESSION_TOOLS[id] || [];
+  const facts = FACTS_MAP[id] || [];
+  const topics = TOPICS_MAP[id] || [];
+
+  // Summary tab
+  const summaryText = document.getElementById('summaryText');
+  if (SUMMARIES[id]) {
+    summaryText.innerHTML = SUMMARIES[id];
+  } else {
+    summaryText.innerHTML = '<span class="summary-empty">Summary will appear here after the first assistant reply.</span>';
+  }
+
+  const topicTags = document.getElementById('topicTags');
+  if (topics.length) {
+    topicTags.innerHTML = topics.map(t =>
+      `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:5px;padding:3px 9px;font-size:10px;font-weight:600;color:var(--muted)">${t}</span>`
+    ).join('');
+  } else {
+    topicTags.innerHTML = '<span style="font-size:11px;color:var(--muted)">None yet</span>';
+  }
+
+  if (lastBot) {
+    set('sp-model', lastBot.model || '—');
+    set('sp-latency', lastBot.usage ? lastBot.usage.lat+'ms' : '—');
+    set('sp-intok', lastBot.usage ? lastBot.usage.in : '—');
+    set('sp-outtok', lastBot.usage ? lastBot.usage.out : '—');
+  }
+
+  // Facts tab
+  const factGrid = document.getElementById('factGrid');
+  if (facts.length) {
+    factGrid.innerHTML = facts.map(f =>
+      `<div class="fact-row"><span class="fact-key">${f.key}</span><span class="fact-val ${f.cls}">${f.val}</span></div>`
+    ).join('');
+  } else {
+    factGrid.innerHTML = '<div style="font-size:12px;color:var(--muted);font-style:italic">No facts extracted yet.</div>';
+  }
+
+  if (lastBot && lastBot.meta) {
+    const m = lastBot.meta;
+    set('pf-rag',   m.rag   ? '✅ Yes' : '❌ No');
+    set('pf-mem',   m.mem   ? '✅ Yes' : '❌ No');
+    set('pf-tools', m.tools ? '✅ Yes' : '❌ No');
+    set('pf-kb',    m.kb    || '—');
+    set('pf-pver',  m.pver  || '—');
+    set('pf-fin',   lastBot.finish || '—');
+  }
+
+  // Sources tab
+  const allCites = document.getElementById('allCitations');
+  if (cites.length) {
+    allCites.innerHTML = cites.map(c => `
+      <div class="cite-card" onclick="showToast('📄 ${c.title}')">
+        <div class="cite-card-title">📄 ${c.title}</div>
+        <div class="cite-card-meta">${c.type} · ${c.location} · <code style="font-size:10px">${c.id}</code></div>
+        <div class="cite-card-snippet">${c.snippet}</div>
+      </div>`).join('');
+  } else {
+    allCites.innerHTML = '<div style="font-size:12px;color:var(--muted);font-style:italic">No citations yet.</div>';
+  }
+
+  // Stats tab
+  set('st-msgs',   stats.msgs    || 0);
+  set('st-turns',  stats.turns   || 0);
+  set('st-intok',  stats.inTok   || 0);
+  set('st-outtok', stats.outTok  || 0);
+  set('st-cites',  stats.cites   || 0);
+  set('st-tools',  stats.toolCalls || 0);
+  if (stats.avgLat) {
+    set('st-lat', stats.avgLat + 'ms');
+    document.getElementById('st-lat-bar').style.width = Math.min(stats.avgLat/3000*100, 100)+'%';
+  }
+
+  const tel = document.getElementById('toolExecList');
+  if (tools.length) {
+    tel.innerHTML = tools.map(t => `
+      <div class="tool-exec-row">
+        <div>
+          <div class="tool-exec-name">${t.name}</div>
+          <div class="tool-exec-meta">${t.type} · ${t.lat}ms</div>
+        </div>
+        <div class="tool-exec-status" style="color:${t.ok?'var(--green)':'var(--red)'}">
+          ${t.ok?'✓ OK':'✗ Fail'}
+        </div>
+      </div>`).join('');
+  } else {
+    tel.innerHTML = '<div style="font-size:12px;color:var(--muted);font-style:italic">No tool calls yet.</div>';
+  }
+}
+
+// ── Send ───────────────────────────────────────────────
+function sendMessage() {
+  const input = document.getElementById('msgInput');
+  const text = input.value.trim();
+  if (!text) return;
+  const ts = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  if (!MESSAGES[currentSession]) MESSAGES[currentSession]=[];
+  MESSAGES[currentSession].push({role:'user', content:text, ts});
+  input.value=''; input.style.height='auto';
+  document.getElementById('sendBtn').disabled = true;
+  renderMessages();
+  streaming ? simulateStreaming(ts) : simulateBlocking(ts);
+}
+
+function simulateBlocking(ts) {
+  showTyping();
+  setTimeout(() => {
+    document.getElementById('typing')?.remove();
+    const resp = pickResponse();
+    const now = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    const lat = Math.round(800+Math.random()*700);
+    const msg = {
+      role:'assistant', content:resp.content, ts:now, model:'gpt-4o',
+      provider:'openai', finish:'stop',
+      usage:{in:Math.round(280+Math.random()*180), out:Math.round(70+Math.random()*90), lat},
+      citations:resp.citations, tools:resp.tools,
+      meta:{rag:resp.citations.length>0, mem:true, tools:resp.tools.length>0, kb:resp.citations.length?'kb-home-loans':null, pver:'v2.1.0'}
+    };
+    MESSAGES[currentSession].push(msg);
+    updateStats(msg);
+    renderMessages();
+    updateContextPanel();
+    document.getElementById('sendBtn').disabled=false;
+    flashSummaryBadge();
+  }, 1200+Math.random()*800);
+}
+
+function simulateStreaming(ts) {
+  const fullText = 'I am processing your request via the **streaming endpoint**. The response is being assembled token by token. Based on the knowledge base, here is relevant information for your query: eligibility depends on your age, income stability, CIBIL score, and the loan-to-value ratio of the property you intend to purchase.';
+  const container = document.getElementById('messages');
+  const el = document.createElement('div');
+  el.className='msg-row assistant'; el.id='streaming-el';
+  const now = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  el.innerHTML=`
+    <div class="msg-avatar bot-av">🤖</div>
+    <div class="msg-body">
+      <div class="msg-meta"><span>Assistant</span><span class="model-badge">gpt-4o ⚡</span><span>${now}</span></div>
+      <div class="msg-bubble" id="s-bubble">▌</div>
+    </div>`;
+  container.appendChild(el);
+  container.scrollTop=container.scrollHeight;
+  let i=0;
+  const iv = setInterval(()=>{
+    if (i>=fullText.length) {
+      clearInterval(iv);
+      el.remove();
+      const msg={role:'assistant',content:fullText,ts:now,model:'gpt-4o',provider:'openai',finish:'stop',
+        usage:{in:220,out:fullText.split(' ').length,lat:900+Math.round(Math.random()*400)},
+        citations:[],tools:[],meta:{rag:false,mem:true,tools:false,kb:null,pver:'v2.1.0'}};
+      MESSAGES[currentSession].push(msg);
+      updateStats(msg);
+      renderMessages();
+      updateContextPanel();
+      document.getElementById('sendBtn').disabled=false;
+      return;
+    }
+    i+=Math.round(3+Math.random()*5);
+    document.getElementById('s-bubble').innerHTML=fmt(fullText.slice(0,i))+'▌';
+    container.scrollTop=container.scrollHeight;
+  }, 38);
+}
+
+function showTyping() {
+  const container = document.getElementById('messages');
+  const el = document.createElement('div');
+  el.id='typing'; el.className='msg-row assistant';
+  el.innerHTML=`
+    <div class="msg-avatar bot-av">🤖</div>
+    <div class="msg-body">
+      <div class="msg-bubble">
+        <div class="typing-indicator">
+          <div class="typing-dot"></div><div class="typing-dot"></div><div class="typing-dot"></div>
+        </div>
+      </div>
+    </div>`;
+  container.appendChild(el);
+  container.scrollTop=container.scrollHeight;
+}
+
+function updateStats(msg) {
+  const id=currentSession;
+  if (!SESSION_STATS[id]) SESSION_STATS[id]={msgs:0,turns:0,inTok:0,outTok:0,avgLat:0,cites:0,toolCalls:0};
+  const s=SESSION_STATS[id];
+  s.msgs = (MESSAGES[id]||[]).length;
+  s.turns = (MESSAGES[id]||[]).filter(m=>m.role==='user').length;
+  if (msg.usage) { s.inTok+=msg.usage.in; s.outTok+=msg.usage.out; s.avgLat=msg.usage.lat; }
+  if (msg.citations) { SESSION_CITATIONS[id]=(SESSION_CITATIONS[id]||[]).concat(msg.citations); s.cites=(SESSION_CITATIONS[id]||[]).length; }
+  if (msg.tools) { SESSION_TOOLS[id]=(SESSION_TOOLS[id]||[]).concat(msg.tools); s.toolCalls=(SESSION_TOOLS[id]||[]).length; }
+}
+
+const POOL = [
+  {content:'Based on the **RAHI Home Loan Policy**, the maximum loan amount is calculated as 60× your net monthly income, subject to the Loan-to-Value (LTV) cap set by the property appraisal. With ₹60,000 income, your indicative limit is **₹36–50 lakhs** depending on property value.',
+   citations:[{id:'doc-414',type:'PDF',title:'LTV Policy Guidelines',snippet:'Maximum LTV ratio is 80% for loans above ₹30 lakhs…',location:'Page 5'}],
+   tools:[{name:'loan-eligibility-check',type:'LOCAL_BEAN',ok:true,lat:305}]},
+  {content:'Current **home loan interest rates** at RAHI range from **8.25% to 9.5% p.a.** The exact rate depends on your credit profile, loan amount, and whether you opt for a fixed or floating rate. A CIBIL score of 740 qualifies you for the preferential rate band of 8.25%–8.6%.',
+   citations:[],
+   tools:[{name:'rate-calculator',type:'REST',ok:true,lat:195}]},
+  {content:'To proceed with the home loan application, please keep the following documents ready:\n\n1. Aadhaar Card (address proof)\n2. PAN Card\n3. Last 3 months salary slips\n4. Last 6 months bank statement\n5. Form 16 / ITR for 2 years\n6. Property documents (sale agreement / allotment letter)',
+   citations:[{id:'doc-415',type:'PDF',title:'KYC & Document Checklist',snippet:'KYC documents required for loan processing include valid photo ID, address proof, and income proof…',location:'Page 2'}],
+   tools:[]},
+];
+function pickResponse() { return POOL[Math.floor(Math.random()*POOL.length)]; }
+
+function flashSummaryBadge() {
+  const badge = document.getElementById('summaryBadge');
+  badge.style.display='';
+  setTimeout(()=>badge.style.display='none', 3000);
+}
+
+// ── Helpers ────────────────────────────────────────────
+function toggleStream() {
+  streaming=!streaming;
+  document.getElementById('streamToggle').className='toggle-pill'+(streaming?' on':'');
+  document.getElementById('streamLabel').textContent='Streaming: '+(streaming?'ON':'OFF');
+}
+function autoResize(el) { el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,100)+'px'; }
+function handleKey(e) { if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage();} }
+function set(id,v) { const el=document.getElementById(id); if(el) el.textContent=v; }
+function showToast(msg) {
+  const t=document.getElementById('toast');
+  document.getElementById('toastMsg').textContent=msg;
+  t.classList.add('show');
+  clearTimeout(t._t);
+  t._t=setTimeout(()=>t.classList.remove('show'),2600);
+}
+
+// ═══════════════════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════════════════
+function openModal(title, bodyHtml, saveFn) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  document.getElementById('modalSave').onclick = saveFn || closeModal;
+  document.getElementById('modalBackdrop').classList.remove('hidden');
+}
+function closeModal() { document.getElementById('modalBackdrop').classList.add('hidden'); }
+function closeModalBackdrop(e) { if(e.target===document.getElementById('modalBackdrop')) closeModal(); }
+function saveModal() { showToast('✅ Saved successfully'); closeModal(); }
+
+function fi(label, id, val='', type='text', hint='') {
+  return `<div class="form-group">
+    <label class="form-label">${label}</label>
+    <input class="form-input" id="${id}" type="${type}" value="${val}" placeholder="${hint}">
+  </div>`;
+}
+function fs(label, id, opts, sel='') {
+  return `<div class="form-group">
+    <label class="form-label">${label}</label>
+    <select class="form-select" id="${id}">${opts.map(o=>`<option${o===sel?' selected':''}>${o}</option>`).join('')}</select>
+  </div>`;
+}
+function ft(label, id, val='', hint='') {
+  return `<div class="form-group">
+    <label class="form-label">${label}</label>
+    <textarea class="form-textarea" id="${id}" placeholder="${hint}">${val}</textarea>
+  </div>`;
+}
+function tog(label, sub, checked) {
+  return `<div class="form-toggle-row">
+    <div><div class="form-toggle-label">${label}</div><div class="form-toggle-sub">${sub}</div></div>
+    <div class="toggle-pill ${checked?'on':''}" onclick="this.classList.toggle('on')"></div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// ADMIN PAGES
+// ═══════════════════════════════════════════════════════
+const ADMIN_PAGES = {
+  dashboard: ()=>`
+    <div class="admin-header"><h2>Platform Dashboard</h2><p>Overview of the Generic Chatbot Platform</p></div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Active Sessions</div><div class="stat-val">24</div><div class="stat-delta">▲ 3 today</div></div>
+      <div class="stat-card"><div class="stat-label">Messages (24h)</div><div class="stat-val">312</div><div class="stat-delta">▲ 18%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Latency</div><div class="stat-val">1.1s</div><div class="stat-delta">▼ 12ms</div></div>
+      <div class="stat-card"><div class="stat-label">Cache Hit Rate</div><div class="stat-val">94%</div><div class="stat-delta stat-neg">▼ 2%</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🤖 Registered Assistants</div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Code</th><th>Name</th><th>Status</th><th>Provider</th><th>Model</th><th>Sessions</th></tr></thead>
+        <tbody>
+          <tr><td><code>loan-advisor</code></td><td>RAHI Loan Advisor</td><td><span class="pill pill-active">ACTIVE</span></td><td>openai</td><td>gpt-4o</td><td>18</td></tr>
+          <tr><td><code>support-bot</code></td><td>Customer Support Bot</td><td><span class="pill pill-active">ACTIVE</span></td><td>anthropic</td><td>claude-sonnet-4-6</td><td>4</td></tr>
+          <tr><td><code>hr-assistant</code></td><td>HR Policy Assistant</td><td><span class="pill pill-closed">INACTIVE</span></td><td>openai</td><td>gpt-4o-mini</td><td>2</td></tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  config: ()=>`
+    <div class="admin-header"><h2>Config Inspector</h2><p><code>GET /api/v1/admin/assistants/{code}/config</code></p></div>
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px"><option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option></select>
+        <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px"><option>rahi-prod</option><option>rahi-dev</option><option>default</option></select>
+        <button class="btn btn-primary" onclick="showToast('🔍 Config loaded · v42')">Load Config</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div><div style="font-size:15px;font-weight:700">RAHI Loan Advisor</div><div style="font-size:11px;color:var(--muted);margin-top:2px">loan-advisor · rahi-prod · Config v42 · Resolved 09:55 UTC</div></div>
+        <span class="pill pill-active">ACTIVE</span>
+      </div>
+      <div class="config-grid">
+        <div class="config-block"><h5>📝 Prompt</h5>
+          <div class="kv-row"><span class="kv-key">Version</span><span class="kv-val kv-blue">v2.1.0</span></div>
+          <div class="kv-row"><span class="kv-key">Guardrails</span><span class="kv-val">3 rules</span></div>
+          <div class="kv-row"><span class="kv-key">Variables</span><span class="kv-val">2 vars</span></div>
+        </div>
+        <div class="config-block"><h5>🔀 Routing</h5>
+          <div class="kv-row"><span class="kv-key">Default Model</span><span class="kv-val kv-blue">gpt-4o</span></div>
+          <div class="kv-row"><span class="kv-key">Provider</span><span class="kv-val">openai</span></div>
+          <div class="kv-row"><span class="kv-key">Temperature</span><span class="kv-val">0.7</span></div>
+          <div class="kv-row"><span class="kv-key">Max Input Tokens</span><span class="kv-val">8192</span></div>
+          <div class="kv-row"><span class="kv-key">Fallback</span><span class="kv-val kv-yellow">USE_DEFAULT</span></div>
+        </div>
+        <div class="config-block"><h5>🗃️ RAG</h5>
+          <div class="kv-row"><span class="kv-key">Enabled</span><span class="kv-val kv-green">true</span></div>
+          <div class="kv-row"><span class="kv-key">Knowledge Base</span><span class="kv-val kv-blue">kb-home-loans</span></div>
+          <div class="kv-row"><span class="kv-key">Top-K</span><span class="kv-val">5</span></div>
+          <div class="kv-row"><span class="kv-key">Similarity</span><span class="kv-val">0.75</span></div>
+          <div class="kv-row"><span class="kv-key">Citations</span><span class="kv-val kv-green">enabled</span></div>
+        </div>
+        <div class="config-block"><h5>🧠 Memory</h5>
+          <div class="kv-row"><span class="kv-key">Enabled</span><span class="kv-val kv-green">true</span></div>
+          <div class="kv-row"><span class="kv-key">Store</span><span class="kv-val kv-blue">JDBC</span></div>
+          <div class="kv-row"><span class="kv-key">Window</span><span class="kv-val">20 msgs</span></div>
+          <div class="kv-row"><span class="kv-key">TTL</span><span class="kv-val">1440 min</span></div>
+          <div class="kv-row"><span class="kv-key">Persist History</span><span class="kv-val kv-green">true</span></div>
+        </div>
+        <div class="config-block"><h5>🔧 Tools</h5>
+          <div class="kv-row"><span class="kv-key">Enabled</span><span class="kv-val kv-green">true</span></div>
+          <div class="kv-row"><span class="kv-key">Runtime Override</span><span class="kv-val kv-green">allowed</span></div>
+          <div class="kv-row"><span class="kv-key">Max Calls / Req</span><span class="kv-val">5</span></div>
+          <div class="kv-row"><span class="kv-key">Timeout</span><span class="kv-val">10,000 ms</span></div>
+          <div class="kv-row"><span class="kv-key">Tools</span><span class="kv-val">3 tools</span></div>
+        </div>
+        <div class="config-block"><h5>🛡️ Safety</h5>
+          <div class="kv-row"><span class="kv-key">Block Unknown Tools</span><span class="kv-val kv-green">true</span></div>
+          <div class="kv-row"><span class="kv-key">Mask PII in Logs</span><span class="kv-val kv-green">true</span></div>
+          <div class="kv-row"><span class="kv-key">Disallowed Topics</span><span class="kv-val">2</span></div>
+          <div class="kv-row"><span class="kv-key">Max Output Tokens</span><span class="kv-val">2048</span></div>
+          <div class="kv-row"><span class="kv-key">Streaming</span><span class="kv-val kv-green">enabled</span></div>
+        </div>
+      </div>
+    </div>`,
+  cache: ()=>`
+    <div class="admin-header"><h2>Cache Management</h2><p>Caffeine config cache · TTL 30 min · Max 500 entries · <code>DELETE /api/v1/admin/config/cache</code></p></div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Entries Cached</div><div class="stat-val" style="color:var(--green)">3</div><div class="stat-delta">of 500 max</div></div>
+      <div class="stat-card"><div class="stat-label">Hit Rate</div><div class="stat-val" style="color:var(--accent)">94%</div><div class="stat-delta stat-neg">▼ 2%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Resolve Time</div><div class="stat-val">12ms</div><div class="stat-delta">cached</div></div>
+      <div class="stat-card"><div class="stat-label">TTL</div><div class="stat-val">30min</div><div class="stat-delta">global</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🗄️ Live Cache Entries</div>
+        <button class="btn btn-danger" onclick="showToast('🗑️ All entries evicted · DELETE /api/v1/admin/config/cache')">Evict All Cache</button>
+      </div>
+      ${[['loan-advisor','rahi-prod','42','09:55','10:25'],['support-bot','rahi-prod','18','08:30','09:00'],['hr-assistant','default','7','07:10','07:40']].map(([code,tenant,ver,res,exp])=>`
+      <div class="cache-entry">
+        <div>
+          <div class="cache-entry-title"><code>${code}</code> :: <code>${tenant}</code></div>
+          <div class="cache-entry-sub">Config v${ver} · Resolved ${res} UTC · Expires ${exp} UTC</div>
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Evicted · DELETE /api/v1/admin/assistants/${code}/config/cache?tenantId=${tenant}')">Evict</button>
+      </div>`).join('')}
+    </div>`,
+
+  sessions: ()=>`
+    <div class="admin-header"><h2>Sessions</h2><p>All chat sessions across tenants · <code>GET /api/v1/users/{userId}/sessions?tenantId=X</code></p></div>
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <input type="text" placeholder="Search user, assistant…" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px;width:180px;outline:none">
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Statuses</option><option>ACTIVE</option><option>CLOSED</option><option>EXPIRED</option></select>
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Assistants</option><option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option></select>
+        </div>
+        <span style="font-size:11px;color:var(--muted)">${SESSIONS.length} sessions</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Session ID</th><th>Title</th><th>Assistant</th><th>User</th><th>Tenant</th><th>Status</th><th>Channel</th><th>Locale</th><th></th></tr></thead>
+        <tbody>${SESSIONS.map(s=>`
+          <tr>
+            <td><code style="font-size:10px">${s.id}</code></td>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.title}</td>
+            <td><code style="font-size:10px">${s.assistant}</code></td>
+            <td>${s.user}</td>
+            <td>rahi-prod</td>
+            <td><span class="pill pill-${s.status.toLowerCase()}">${s.status}</span></td>
+            <td>${s.channel}</td>
+            <td>${s.locale}</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="showToast('📨 Messages · GET /api/v1/sessions/${s.id}/messages')">Messages</button>
+              <button class="btn btn-ghost btn-sm" onclick="showToast('👁 Session · GET /api/v1/sessions/${s.id}')">View</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`,
+
+  messages: ()=>`
+    <div class="admin-header"><h2>Message History</h2><p>Browse messages within a session · <code>GET /api/v1/sessions/{sessionId}/messages?limit=50</code></p></div>
+    <div class="card" style="margin-bottom:14px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px;flex:1;min-width:200px">
+          ${SESSIONS.map(s=>`<option value="${s.id}">${s.id} — ${s.title}</option>`).join('')}
+        </select>
+        <input type="number" value="50" placeholder="Limit" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text);font-size:12px">
+        <button class="btn btn-primary" onclick="showToast('📨 Messages loaded')">Load</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">sess-abc123 · Home Loan Eligibility</div>
+        <div style="font-size:11px;color:var(--muted)">4 messages · pageSize=50 · count=4</div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Message ID</th><th>Role</th><th>Content Preview</th><th>Model</th><th>Citations</th><th>Tool Calls</th><th>Finish</th><th>Timestamp</th></tr></thead>
+        <tbody>
+          <tr><td><code style="font-size:10px">msg-001</code></td><td><span style="background:rgba(91,110,245,.12);color:var(--accent);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">USER</span></td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">What are the eligibility criteria for a home loan?</td><td>—</td><td>—</td><td>—</td><td>—</td><td>10:01 AM</td></tr>
+          <tr><td><code style="font-size:10px">msg-002</code></td><td><span style="background:rgba(34,197,94,.12);color:var(--green);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">ASST</span></td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">To be eligible for a home loan at RAHI…</td><td><span class="model-badge">gpt-4o</span></td><td><span style="color:var(--accent)">1</span></td><td><span style="color:var(--green)">1</span></td><td>stop</td><td>10:01 AM</td></tr>
+          <tr><td><code style="font-size:10px">msg-003</code></td><td><span style="background:rgba(91,110,245,.12);color:var(--accent);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">USER</span></td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">I am 32 years old, earning ₹60,000/month…</td><td>—</td><td>—</td><td>—</td><td>—</td><td>10:03 AM</td></tr>
+          <tr><td><code style="font-size:10px">msg-004</code></td><td><span style="background:rgba(34,197,94,.12);color:var(--green);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">ASST</span></td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Great news! Based on your profile…</td><td><span class="model-badge">gpt-4o</span></td><td><span style="color:var(--accent)">1</span></td><td><span style="color:var(--green)">2</span></td><td>stop</td><td>10:03 AM</td></tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  assistants: ()=>`
+    <div class="admin-header">
+      <h2>Assistants</h2>
+      <p>Master registry of all assistants on the platform. Each assistant anchors a full config tree (prompts, routing, policies).</p>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🤖 All Assistants</div>
+        <button class="btn btn-primary" onclick="openAssistantModal()">+ New Assistant</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Code</th><th>Name</th><th>Description</th><th>Tenant Scope</th><th>Config v</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>loan-advisor</code></td>
+            <td>RAHI Loan Advisor</td>
+            <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">Handles home/personal loan queries</td>
+            <td>rahi-prod</td><td>42</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="color:var(--muted)">2026-01-10</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openAssistantModal('loan-advisor','RAHI Loan Advisor','Handles home/personal loan queries','rahi-prod')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('⚠️ Deactivated loan-advisor')">Deactivate</button>
+            </td>
+          </tr>
+          <tr>
+            <td><code>support-bot</code></td>
+            <td>Customer Support Bot</td>
+            <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">General customer support queries</td>
+            <td>rahi-prod</td><td>18</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="color:var(--muted)">2026-02-01</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openAssistantModal('support-bot','Customer Support Bot','General customer support queries','rahi-prod')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('⚠️ Deactivated support-bot')">Deactivate</button>
+            </td>
+          </tr>
+          <tr>
+            <td><code>hr-assistant</code></td>
+            <td>HR Policy Assistant</td>
+            <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">Internal HR policy & leave queries</td>
+            <td>rahi-internal</td><td>7</td>
+            <td><span class="pill pill-closed">INACTIVE</span></td>
+            <td style="color:var(--muted)">2026-03-15</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openAssistantModal('hr-assistant','HR Policy Assistant','Internal HR policy and leave queries','rahi-internal')">Edit</button>
+              <button class="btn btn-primary btn-sm" onclick="showToast('✅ Activated hr-assistant')">Activate</button>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'prompt-templates': ()=>`
+    <div class="admin-header">
+      <h2>Prompt Templates</h2>
+      <p>Versioned system and developer prompt templates per assistant. The active version is used at runtime.</p>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+      <select id="ptAssistant" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+      <button class="btn btn-primary" onclick="openPromptTemplateModal()">+ New Version</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">📝 Versions — loan-advisor</div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Version</th><th>Status</th><th>System Prompt (preview)</th><th>Dev Prompt</th><th>Variables</th><th>Guardrails</th><th>Created By</th><th>Created At</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>v2.1.0</strong></td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">You are RAHI Loan Advisor, a professional financial assistant…</td>
+            <td><span style="color:var(--muted)">Present</span></td>
+            <td>2 vars</td>
+            <td>3 rules</td>
+            <td style="color:var(--muted)">kaushik</td>
+            <td style="color:var(--muted)">2026-04-10</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openPromptTemplateModal('v2.1.0')">Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="showToast('📋 v2.1.0 cloned as v2.2.0')">Clone</button>
+            </td>
+          </tr>
+          <tr style="opacity:.6">
+            <td>v2.0.0</td>
+            <td><span class="pill pill-closed">INACTIVE</span></td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)">You are a loan assistant at RAHI…</td>
+            <td><span style="color:var(--muted)">None</span></td>
+            <td>1 var</td>
+            <td>2 rules</td>
+            <td style="color:var(--muted)">kaushik</td>
+            <td style="color:var(--muted)">2026-02-20</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openPromptTemplateModal('v2.0.0')">View</button>
+              <button class="btn btn-primary btn-sm" onclick="showToast('✅ v2.0.0 set as active')">Activate</button>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'model-routes': ()=>`
+    <div class="admin-header">
+      <h2>Model Routes</h2>
+      <p>Conditional routing rules evaluated in priority order. Lower priority number = evaluated first.</p>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+      <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+      <button class="btn btn-primary" onclick="openModelRouteModal()">+ Add Route</button>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title">🔀 Routes — loan-advisor</div><div style="font-size:11px;color:var(--muted)">Evaluated in priority order · Fallback: USE_DEFAULT_MODEL (gpt-4o / openai)</div></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Priority</th><th>Route Name</th><th>Type</th><th>Conditions</th><th>Target Provider</th><th>Target Model</th><th>Max Tokens</th><th>Temp</th><th>Status</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="priority-badge">1</span></td>
+            <td><strong>long-context</strong></td>
+            <td><code style="font-size:10px">LONG_CONTEXT</code></td>
+            <td style="font-size:11px;color:var(--muted)">promptLen &gt; 5000</td>
+            <td>anthropic</td>
+            <td><code style="font-size:10px">claude-opus-4-6</code></td>
+            <td>200000</td>
+            <td>0.5</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openModelRouteModal('long-context')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Route deleted')">Delete</button>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge">2</span></td>
+            <td><strong>tool-heavy</strong></td>
+            <td><code style="font-size:10px">TOOL_HEAVY</code></td>
+            <td style="font-size:11px;color:var(--muted)">toolsRequired = true</td>
+            <td>openai</td>
+            <td><code style="font-size:10px">gpt-4o</code></td>
+            <td>8192</td>
+            <td>0.3</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openModelRouteModal('tool-heavy')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Route deleted')">Delete</button>
+            </td>
+          </tr>
+          <tr>
+            <td><span class="priority-badge">3</span></td>
+            <td><strong>knowledge-qa</strong></td>
+            <td><code style="font-size:10px">KNOWLEDGE_QA</code></td>
+            <td style="font-size:11px;color:var(--muted)">ragEnabled = true</td>
+            <td>openai</td>
+            <td><code style="font-size:10px">gpt-4o</code></td>
+            <td>8192</td>
+            <td>0.7</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openModelRouteModal('knowledge-qa')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Route deleted')">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'knowledge-bases': ()=>`
+    <div class="admin-header">
+      <h2>Knowledge Bases</h2>
+      <p>Vector store registrations used by the RAG pipeline. Each KB can be referenced from any assistant's RAG policy.</p>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">📚 Registered Knowledge Bases</div>
+        <button class="btn btn-primary" onclick="openKbModal()">+ Register KB</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>KB ID</th><th>Name</th><th>Vector Store</th><th>Embedding Model</th><th>Connection Ref</th><th>Status</th><th>Created</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>kb-home-loans</code></td>
+            <td>Home Loan Policy KB</td>
+            <td>PGVECTOR</td>
+            <td>text-embedding-3-small</td>
+            <td style="color:var(--muted);font-size:11px">pgvector://chatbot/kb_home_loans</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="color:var(--muted)">2026-01-15</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openKbModal('kb-home-loans')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('⚠️ kb-home-loans deactivated')">Deactivate</button>
+            </td>
+          </tr>
+          <tr>
+            <td><code>kb-hr-policy</code></td>
+            <td>HR Policy KB</td>
+            <td>PGVECTOR</td>
+            <td>text-embedding-3-small</td>
+            <td style="color:var(--muted);font-size:11px">pgvector://chatbot/kb_hr_policy</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="color:var(--muted)">2026-03-01</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openKbModal('kb-hr-policy')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('⚠️ kb-hr-policy deactivated')">Deactivate</button>
+            </td>
+          </tr>
+          <tr>
+            <td><code>kb-rates</code></td>
+            <td>Interest Rate Schedules</td>
+            <td>PGVECTOR</td>
+            <td>text-embedding-ada-002</td>
+            <td style="color:var(--muted);font-size:11px">pgvector://chatbot/kb_rates</td>
+            <td><span class="pill pill-closed">INACTIVE</span></td>
+            <td style="color:var(--muted)">2025-12-01</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openKbModal('kb-rates')">Edit</button>
+              <button class="btn btn-primary btn-sm" onclick="showToast('✅ kb-rates activated')">Activate</button>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'tenant-overrides': ()=>`
+    <div class="admin-header">
+      <h2>Tenant Overrides</h2>
+      <p>Per-tenant config overrides applied on top of the base assistant config. Active overrides win at resolution time.</p>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🏢 Override Registry</div>
+        <button class="btn btn-primary" onclick="openOverrideModal()">+ Add Override</button>
+      </div>
+      <div style="display:flex;gap:7px;margin-bottom:12px">
+        <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Tenants</option><option>rahi-prod</option><option>rahi-dev</option><option>rahi-internal</option></select>
+        <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Assistants</option><option>loan-advisor</option><option>support-bot</option></select>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tenant</th><th>Assistant</th><th>Override Type</th><th>Payload Preview</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>rahi-dev</code></td>
+            <td><code>loan-advisor</code></td>
+            <td><span style="background:rgba(91,110,245,.12);color:var(--accent);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">MODEL_ROUTE</span></td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px">{"targetModel":"gpt-4o-mini","temperature":0.5}</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="color:var(--muted)">2026-05-01</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openOverrideModal('rahi-dev','loan-advisor')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Override deleted')">Delete</button>
+            </td>
+          </tr>
+          <tr>
+            <td><code>rahi-internal</code></td>
+            <td><code>hr-assistant</code></td>
+            <td><span style="background:rgba(34,197,94,.12);color:var(--green);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">RAG_POLICY</span></td>
+            <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:11px">{"knowledgeBaseId":"kb-hr-policy","topK":3}</td>
+            <td><span class="pill pill-active">ACTIVE</span></td>
+            <td style="color:var(--muted)">2026-04-15</td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openOverrideModal('rahi-internal','hr-assistant')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Override deleted')">Delete</button>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'memory-policy': ()=>`
+    <div class="admin-header"><h2>Memory Policy</h2><p>One policy per assistant. Controls conversation memory storage, window size, and TTL.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🧠 Memory Policy — loan-advisor</div>
+        <button class="btn btn-primary" onclick="showToast('✅ Memory policy saved')">Save Changes</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div>
+          <div class="form-group">
+            <label class="form-label">Store Type<span>*</span></label>
+            <select class="form-select"><option>JDBC</option><option>IN_MEMORY</option><option>NONE</option></select>
+            <div class="form-hint">JDBC = durable DB storage · IN_MEMORY = volatile · NONE = stateless</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Message Window Size</label>
+            <input class="form-input" type="number" value="20" min="1" max="200">
+            <div class="form-hint">Max past messages loaded into model context</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">TTL (minutes)</label>
+            <input class="form-input" type="number" value="1440" min="1">
+            <div class="form-hint">1440 = 24 hours. Memory records expire after this duration.</div>
+          </div>
+        </div>
+        <div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Flags</div>
+            ${tog('Memory Enabled','Turn on/off the entire memory pipeline for this assistant',true)}
+            ${tog('Persist Chat History','Save all messages to the database for audit and recall',true)}
+            ${tog('Summarize Old Messages','Summarise messages beyond window size instead of discarding',false)}
+          </div>
+        </div>
+      </div>
+    </div>`,
+
+  'rag-policy': ()=>`
+    <div class="admin-header"><h2>RAG Policy</h2><p>Controls knowledge retrieval behaviour. One policy per assistant.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🗃️ RAG Policy — loan-advisor</div>
+        <button class="btn btn-primary" onclick="showToast('✅ RAG policy saved')">Save Changes</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div>
+          <div class="form-group">
+            <label class="form-label">Default Knowledge Base<span>*</span></label>
+            <select class="form-select"><option>kb-home-loans</option><option>kb-hr-policy</option><option>kb-rates</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Retrieval Strategy</label>
+            <select class="form-select"><option>SEMANTIC</option><option>HYBRID</option><option>BM25</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Top-K (chunks retrieved)</label>
+            <input class="form-input" type="number" value="5" min="1" max="50">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Similarity Threshold (0–1)</label>
+            <input class="form-input" type="number" value="0.75" min="0" max="1" step="0.01">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Metadata Filters (JSON)</label>
+            <textarea class="form-textarea" style="min-height:60px">{"product":"home-loan","region":"IN"}</textarea>
+            <div class="form-hint">Applied to every retrieval call for this assistant</div>
+          </div>
+        </div>
+        <div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Flags</div>
+            ${tog('RAG Enabled','Enable retrieval-augmented generation for this assistant',true)}
+            ${tog('Citations Enabled','Include source citations in assistant responses',true)}
+            ${tog('Grounded Answer Required','Block responses that cannot cite a source document',false)}
+          </div>
+        </div>
+      </div>
+    </div>`,
+
+  'tool-policy': ()=>`
+    <div class="admin-header"><h2>Tool Policy</h2><p>Define which tools are available to each assistant, their types, timeouts, and approval requirements.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+      <button class="btn btn-primary" onclick="openToolModal()">+ Add Tool</button>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🔧 Tools — loan-advisor</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <div style="font-size:11px;color:var(--muted)">Max calls/req: 5 · Default timeout: 10,000ms</div>
+          <button class="btn btn-ghost btn-sm" onclick="showToast('✅ Policy settings saved')">Save Settings</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:12px">
+        <div class="form-group" style="margin:0;flex:1">
+          <label class="form-label">Max Tool Calls / Request</label>
+          <input class="form-input" type="number" value="5" min="1" max="20">
+        </div>
+        <div class="form-group" style="margin:0;flex:1">
+          <label class="form-label">Default Timeout (ms)</label>
+          <input class="form-input" type="number" value="10000">
+        </div>
+        <div style="display:flex;align-items:flex-end;padding-bottom:0">
+          ${tog('Allow Runtime Subset Selection','Let callers override the active tool list per request via runtimeOverride.enabledToolNames',true)}
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Tool Name</th><th>Type</th><th>Timeout (ms)</th><th>Requires Approval</th><th>Enabled</th><th>Actions</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><strong>loan-eligibility-check</strong></td>
+            <td><span style="background:rgba(34,197,94,.12);color:var(--green);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">LOCAL_BEAN</span></td>
+            <td>5000</td>
+            <td><span class="ok-text">No</span></td>
+            <td><div class="toggle-pill on" onclick="this.classList.toggle('on')"></div></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openToolModal('loan-eligibility-check')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Tool removed')">Remove</button>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>rate-calculator</strong></td>
+            <td><span style="background:rgba(245,158,11,.12);color:var(--yellow);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">REST</span></td>
+            <td>3000</td>
+            <td><span class="ok-text">No</span></td>
+            <td><div class="toggle-pill on" onclick="this.classList.toggle('on')"></div></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openToolModal('rate-calculator')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Tool removed')">Remove</button>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>document-fetcher</strong></td>
+            <td><span style="background:rgba(91,110,245,.12);color:var(--accent);padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700">MCP</span></td>
+            <td>10000</td>
+            <td><span class="warn-text">Yes</span></td>
+            <td><div class="toggle-pill" onclick="this.classList.toggle('on')"></div></td>
+            <td style="display:flex;gap:4px">
+              <button class="btn btn-ghost btn-sm" onclick="openToolModal('document-fetcher')">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="showToast('🗑️ Tool removed')">Remove</button>
+            </td>
+          </tr>
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'safety-policy': ()=>`
+    <div class="admin-header"><h2>Safety Policy</h2><p>Content safety and runtime guardrail configuration per assistant.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">🛡️ Safety Policy — loan-advisor</div>
+        <button class="btn btn-primary" onclick="showToast('✅ Safety policy saved')">Save Changes</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:12px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Runtime Guards</div>
+            ${tog('Block Unknown Tools','Reject requests referencing tool names not in the allow-list',true)}
+            ${tog('Block Without RAG in Grounded Mode','Block model from answering if RAG retrieval fails when grounded mode is on',false)}
+            ${tog('Allow Direct Model Answer Without Context','Allow model to answer from training data when no retrieved context is found',true)}
+            ${tog('Mask Sensitive Data in Logs','Apply PII/credential masking before writing to application logs',true)}
+          </div>
+        </div>
+        <div>
+          <div class="form-group">
+            <label class="form-label">Disallowed Topics</label>
+            <textarea class="form-textarea" style="min-height:100px">cryptocurrency
+gambling</textarea>
+            <div class="form-hint">One topic per line. Requests matching these will be blocked.</div>
+          </div>
+        </div>
+      </div>
+    </div>`,
+
+  'response-policy': ()=>`
+    <div class="admin-header"><h2>Response Policy</h2><p>Controls output format, tone, token limits, and streaming defaults per assistant.</p></div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-size:12px">
+        <option>loan-advisor</option><option>support-bot</option><option>hr-assistant</option>
+      </select>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title">💬 Response Policy — loan-advisor</div>
+        <button class="btn btn-primary" onclick="showToast('✅ Response policy saved')">Save Changes</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div>
+          <div class="form-group">
+            <label class="form-label">Default Tone</label>
+            <select class="form-select"><option>professional</option><option>friendly</option><option>formal</option><option>concise</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Default Format</label>
+            <select class="form-select"><option>markdown</option><option>text</option><option>json</option></select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Max Output Tokens</label>
+            <input class="form-input" type="number" value="2048" min="64" max="16384">
+            <div class="form-hint">Hard cap on tokens the model may generate per response</div>
+          </div>
+        </div>
+        <div>
+          <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Flags</div>
+            ${tog('Markdown Enabled','Allow the model to use markdown formatting in responses',true)}
+            ${tog('Citation Required','Every response must include at least one source citation',false)}
+            ${tog('Streaming Enabled (Default)','Use the streaming endpoint by default for this assistant',true)}
+          </div>
+        </div>
+      </div>
+    </div>`,
+
+  'execution-monitor': ()=>`
+    <div class="admin-header">
+      <h2>Execution Monitor</h2>
+      <p>Request-level execution records. Each row = one <code>POST /api/v1/chat</code> call. Source: <code>ChatExecutionEntity</code></p>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Total Executions (24h)</div><div class="stat-val">312</div><div class="stat-delta">▲ 18%</div></div>
+      <div class="stat-card"><div class="stat-label">Success Rate</div><div class="stat-val" style="color:var(--green)">98.4%</div><div class="stat-delta">▲ 0.2%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Latency</div><div class="stat-val">1.1s</div><div class="stat-delta">▼ 12ms</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Output Tokens</div><div class="stat-val">96</div><div class="stat-delta">▲ 3</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;gap:7px;flex-wrap:wrap">
+          <input type="text" placeholder="Search requestId, sessionId…" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px;width:200px;outline:none">
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All</option><option>Success</option><option>Failed</option></select>
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Assistants</option><option>loan-advisor</option><option>support-bot</option></select>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Request ID</th><th>Session ID</th><th>Assistant</th><th>Provider</th><th>Model</th><th>In Tokens</th><th>Out Tokens</th><th>Latency</th><th>Streaming</th><th>Status</th><th>Started At</th></tr></thead>
+        <tbody>
+          ${[
+            ['req-7f3a9c12','sess-abc123','loan-advisor','openai','gpt-4o',312,98,1240,false,true,'10:01:32'],
+            ['req-8b4e1d33','sess-abc123','loan-advisor','openai','gpt-4o',428,112,980,false,true,'10:03:15'],
+            ['req-2c9f0a44','sess-def456','loan-advisor','openai','gpt-4o',198,87,820,false,true,'09:15:08'],
+            ['req-5d1b7e55','sess-ghi789','support-bot','anthropic','claude-sonnet-4-6',256,134,1420,true,true,'08:45:22'],
+            ['req-9e6c2f66','sess-ghi789','support-bot','anthropic','claude-sonnet-4-6',180,0,240,false,false,'08:50:10'],
+          ].map(([rid,sid,asst,prov,model,inT,outT,lat,stream,ok,ts])=>`
+          <tr>
+            <td><code style="font-size:10px">${rid}</code></td>
+            <td><code style="font-size:10px">${sid}</code></td>
+            <td><code style="font-size:10px">${asst}</code></td>
+            <td>${prov}</td>
+            <td><span class="model-badge">${model}</span></td>
+            <td>${inT}</td>
+            <td>${outT || '<span class="fail-text">0</span>'}</td>
+            <td>${lat}ms</td>
+            <td>${stream ? '<span class="ok-text">SSE</span>' : 'Blocking'}</td>
+            <td>${ok ? '<span class="ok-text">✓ OK</span>' : '<span class="fail-text">✗ ERROR</span>'}</td>
+            <td style="color:var(--muted)">${ts}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'tool-audit': ()=>`
+    <div class="admin-header">
+      <h2>Tool Execution Audit</h2>
+      <p>Per-tool invocation traces. Source: <code>ToolExecutionAuditEntity</code></p>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Total Calls (24h)</div><div class="stat-val">148</div><div class="stat-delta">▲ 12%</div></div>
+      <div class="stat-card"><div class="stat-label">Success Rate</div><div class="stat-val" style="color:var(--green)">96.6%</div><div class="stat-delta">▼ 0.5%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Latency</div><div class="stat-val">285ms</div><div class="stat-delta">▼ 8ms</div></div>
+      <div class="stat-card"><div class="stat-label">Failed Calls</div><div class="stat-val" style="color:var(--red)">5</div><div class="stat-delta stat-neg">▲ 1</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;gap:7px">
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Tools</option><option>loan-eligibility-check</option><option>rate-calculator</option><option>document-fetcher</option></select>
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Types</option><option>LOCAL_BEAN</option><option>REST</option><option>MCP</option></select>
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Results</option><option>Success</option><option>Failed</option></select>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Request ID</th><th>Session ID</th><th>Tool Name</th><th>Type</th><th>Latency</th><th>Status</th><th>Error Code</th><th>Timestamp</th></tr></thead>
+        <tbody>
+          ${[
+            ['tae-001','req-7f3a9c12','sess-abc123','loan-eligibility-check','LOCAL_BEAN',320,true,''],
+            ['tae-002','req-8b4e1d33','sess-abc123','loan-eligibility-check','LOCAL_BEAN',290,true,''],
+            ['tae-003','req-8b4e1d33','sess-abc123','rate-calculator','REST',185,true,''],
+            ['tae-004','req-2c9f0a44','sess-def456','rate-calculator','REST',210,true,''],
+            ['tae-005','req-5d1b7e55','sess-ghi789','document-fetcher','MCP',8500,false,'TOOL_TIMEOUT'],
+            ['tae-006','req-9e6c2f66','sess-ghi789','loan-eligibility-check','LOCAL_BEAN',150,false,'TOOL_EXECUTION_ERROR'],
+          ].map(([id,rid,sid,tool,type,lat,ok,err])=>`
+          <tr>
+            <td><code style="font-size:10px">${id}</code></td>
+            <td><code style="font-size:10px">${rid}</code></td>
+            <td><code style="font-size:10px">${sid}</code></td>
+            <td><strong>${tool}</strong></td>
+            <td><code style="font-size:10px">${type}</code></td>
+            <td>${lat}ms</td>
+            <td>${ok ? '<span class="ok-text">✓ Success</span>' : '<span class="fail-text">✗ Failed</span>'}</td>
+            <td>${err ? '<code style="font-size:10px;color:var(--red)">'+err+'</code>' : '<span style="color:var(--muted)">—</span>'}</td>
+            <td style="color:var(--muted)">Today</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`,
+
+  'rag-audit': ()=>`
+    <div class="admin-header">
+      <h2>RAG Retrieval Audit</h2>
+      <p>Document retrieval traces per request. Source: <code>RagRetrievalAuditEntity</code></p>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-card"><div class="stat-label">Retrievals (24h)</div><div class="stat-val">204</div><div class="stat-delta">▲ 9%</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Docs Retrieved</div><div class="stat-val">4.2</div><div class="stat-delta">—</div></div>
+      <div class="stat-card"><div class="stat-label">Avg Retrieval Latency</div><div class="stat-val">68ms</div><div class="stat-delta">▼ 5ms</div></div>
+      <div class="stat-card"><div class="stat-label">Grounded Mode Used</div><div class="stat-val">12%</div><div class="stat-delta">—</div></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div style="display:flex;gap:7px">
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Knowledge Bases</option><option>kb-home-loans</option><option>kb-hr-policy</option><option>kb-rates</option></select>
+          <select style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:5px 9px;color:var(--text);font-size:12px"><option>All Modes</option><option>Standard</option><option>Grounded</option></select>
+        </div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>ID</th><th>Request ID</th><th>Session ID</th><th>Knowledge Base</th><th>Docs Retrieved</th><th>Top-K</th><th>Similarity Threshold</th><th>Grounded Mode</th><th>Latency</th><th>Timestamp</th></tr></thead>
+        <tbody>
+          ${[
+            ['rae-001','req-7f3a9c12','sess-abc123','kb-home-loans',3,5,0.75,false,62],
+            ['rae-002','req-8b4e1d33','sess-abc123','kb-home-loans',4,5,0.75,false,71],
+            ['rae-003','req-5d1b7e55','sess-ghi789','kb-home-loans',5,5,0.75,true,88],
+            ['rae-004','req-4a2d8b77','sess-jkl012','kb-hr-policy',2,5,0.80,true,54],
+            ['rae-005','req-3b9e5c88','sess-jkl012','kb-hr-policy',4,5,0.80,false,66],
+          ].map(([id,rid,sid,kb,docs,topk,thresh,grounded,lat])=>`
+          <tr>
+            <td><code style="font-size:10px">${id}</code></td>
+            <td><code style="font-size:10px">${rid}</code></td>
+            <td><code style="font-size:10px">${sid}</code></td>
+            <td><code style="font-size:10px">${kb}</code></td>
+            <td>${docs}</td>
+            <td>${topk}</td>
+            <td>${thresh}</td>
+            <td>${grounded ? '<span class="warn-text">Grounded</span>' : '<span style="color:var(--muted)">Standard</span>'}</td>
+            <td>${lat}ms</td>
+            <td style="color:var(--muted)">Today</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`,
+};
+
+// ── Modal openers ──────────────────────────────────────
+function openAssistantModal(code='', name='', desc='', tenant='') {
+  const isEdit = !!code;
+  openModal(isEdit ? 'Edit Assistant: ' + code : 'Create Assistant', `
+    <div class="form-row">
+      ${fi('Assistant Code *','m-code',code,'text','e.g. loan-advisor')}
+      ${fi('Display Name *','m-name',name,'text','e.g. RAHI Loan Advisor')}
+    </div>
+    ${fi('Tenant Scope *','m-tenant',tenant,'text','e.g. rahi-prod')}
+    <div class="form-group"><label class="form-label">Description</label>
+      <textarea class="form-textarea" id="m-desc">${desc}</textarea></div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      ${tog('Active','Set this assistant as active and available for runtime requests', isEdit ? code !== 'hr-assistant' : true)}
+    </div>`);
+}
+
+function openPromptTemplateModal(ver='') {
+  openModal(ver ? 'Edit Template: ' + ver : 'New Prompt Template Version', `
+    ${fs('Assistant *','m-pt-asst',['loan-advisor','support-bot','hr-assistant'],'loan-advisor')}
+    ${fi('Version *','m-pt-ver',ver || 'v2.2.0')}
+    <div class="form-group"><label class="form-label">System Prompt Template <span>*</span></label>
+      <textarea class="form-textarea" style="min-height:100px" id="m-pt-sys">You are {{assistantName}}, a professional financial assistant at RAHI Technologies. Answer only questions related to loan products. Tone: {{tone}}.</textarea></div>
+    <div class="form-group"><label class="form-label">Developer Prompt Template</label>
+      <textarea class="form-textarea" id="m-pt-dev">Internal: Ensure all responses are grounded in the provided context. Do not hallucinate interest rates.</textarea></div>
+    <div class="form-group"><label class="form-label">Default Variables (JSON)</label>
+      <textarea class="form-textarea" style="min-height:50px" id="m-pt-vars">{"assistantName":"RAHI Loan Advisor","tone":"professional"}</textarea></div>
+    <div class="form-group"><label class="form-label">Guardrail Instructions (one per line)</label>
+      <textarea class="form-textarea" id="m-pt-guard">Do not discuss competitor products.
+Do not provide personalised tax advice.
+Always recommend consulting a loan officer for large amounts.</textarea></div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      ${tog('Set as Active Version','Replace the current active template with this version',false)}
+    </div>`);
+}
+
+function openModelRouteModal(name='') {
+  openModal(name ? 'Edit Route: ' + name : 'Add Model Route', `
+    <div class="form-row">
+      ${fi('Route Name *','m-rn',name,'text','e.g. long-context')}
+      ${fs('Route Type *','m-rt',['SIMPLE','KNOWLEDGE_QA','TOOL_HEAVY','LONG_CONTEXT','STRUCTURED_OUTPUT'],'KNOWLEDGE_QA')}
+    </div>
+    <div class="form-row">
+      ${fi('Priority *','m-rp','10','number','Lower = higher priority')}
+      ${fs('Fallback Policy','m-rfb',['USE_DEFAULT_MODEL','FAIL_FAST'],'USE_DEFAULT_MODEL')}
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Conditions</div>
+      <div class="form-row">
+        ${fi('Min Prompt Length','m-rmin','','number','chars')}
+        ${fi('Max Prompt Length','m-rmax','5000','number','chars')}
+      </div>
+      ${tog('RAG Enabled Only','Only activate when RAG is in use',false)}
+      ${tog('Tools Required Only','Only activate when tool calls are expected',false)}
+      ${tog('Structured Output Only','Only activate for structured JSON output requests',false)}
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Target</div>
+      <div class="form-row">
+        ${fi('Target Provider *','m-rprov','anthropic')}
+        ${fi('Target Model *','m-rmod','claude-opus-4-6')}
+      </div>
+      <div class="form-row">
+        ${fi('Max Input Tokens','m-rmit','200000','number')}
+        ${fi('Temperature','m-rtemp','0.5','number')}
+      </div>
+    </div>`);
+}
+
+function openKbModal(id='') {
+  openModal(id ? 'Edit Knowledge Base: ' + id : 'Register Knowledge Base', `
+    <div class="form-row">
+      ${fi('Knowledge Base ID *','m-kbid',id,'text','e.g. kb-home-loans')}
+      ${fi('Display Name *','m-kbname',id ? 'Home Loan Policy KB' : '')}
+    </div>
+    ${fs('Vector Store Type *','m-kbvs',['PGVECTOR','WEAVIATE','QDRANT','PINECONE'],'PGVECTOR')}
+    ${fi('Embedding Model *','m-kbem','text-embedding-3-small')}
+    ${fi('Connection Ref *','m-kbconn','pgvector://chatbot/kb_home_loans','text','Connection string or datasource ref')}
+    <div class="form-group"><label class="form-label">Metadata Filter Policy (JSON)</label>
+      <textarea class="form-textarea" style="min-height:50px" id="m-kbmf">{"product":"home-loan"}</textarea></div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      ${tog('Active','Make this knowledge base available for RAG policies',true)}
+    </div>`);
+}
+
+function openOverrideModal(tenant='', asst='') {
+  openModal(tenant ? 'Edit Override: ' + tenant + ' / ' + asst : 'Add Tenant Override', `
+    <div class="form-row">
+      ${fi('Tenant ID *','m-ovt',tenant,'text','e.g. rahi-dev')}
+      ${fs('Assistant *','m-ova',['loan-advisor','support-bot','hr-assistant'],asst || 'loan-advisor')}
+    </div>
+    ${fs('Override Type *','m-ovtype',['MODEL_ROUTE','RAG_POLICY','MEMORY_POLICY','TOOL_POLICY','SAFETY_POLICY','RESPONSE_POLICY'],'MODEL_ROUTE')}
+    <div class="form-group"><label class="form-label">Override Payload (JSON) <span>*</span></label>
+      <textarea class="form-textarea" style="min-height:100px" id="m-ovpay">{"targetModel":"gpt-4o-mini","temperature":0.5,"maxInputTokens":4096}</textarea>
+      <div class="form-hint">JSON object merged on top of the base assistant config at resolution time</div></div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      ${tog('Active','Apply this override during config resolution',true)}
+    </div>`);
+}
+
+function openToolModal(name='') {
+  openModal(name ? 'Edit Tool: ' + name : 'Add Tool to Policy', `
+    ${fi('Tool Name *','m-tn',name,'text','Registered Spring bean name or MCP tool name')}
+    <div class="form-row">
+      ${fs('Tool Type *','m-tt',['LOCAL_BEAN','REST','MCP'],'LOCAL_BEAN')}
+      ${fi('Timeout (ms)','m-tto','5000','number')}
+    </div>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px">
+      ${tog('Enabled','Include this tool in the assistant tool policy',true)}
+      ${tog('Requires Approval','Human-in-the-loop approval required before execution',false)}
+    </div>`);
+}
+
+// ── Admin nav ──────────────────────────────────────────
+function adminNav(page, el) {
+  document.querySelectorAll('.admin-nav-item').forEach(i=>i.classList.remove('active'));
+  if(el) el.classList.add('active');
+  const fn = ADMIN_PAGES[page] || ADMIN_PAGES['dashboard'];
+  document.getElementById('adminMain').innerHTML = fn();
+}
+
+// ── Init ───────────────────────────────────────────────
+renderSessions();
+renderMessages();
+updateContextPanel();
+</script>
+</body>
+</html>

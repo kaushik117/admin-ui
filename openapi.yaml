@@ -1,0 +1,3696 @@
+openapi: 3.0.3
+
+info:
+  title: k2pbot — Generic Chatbot Platform API
+  description: |
+    REST API for the k2pbot Generic Chatbot Platform built on Spring Boot / Spring AI.
+    Provides blocking chat, Server-Sent Events streaming, session management, and admin
+    configuration endpoints.
+
+    **Error codes returned in `ApiErrorResponse.errorCode`**
+    | Code | Meaning |
+    |---|---|
+    | `VALIDATION_ERROR` | Bean-validation failure on the request body |
+    | `ASSISTANT_NOT_FOUND` | No active assistant found for the given code |
+    | `CONFIG_INVALID` | Assistant config failed validation (422) |
+    | `CONFIG_NOT_FOUND` | Config resolution / knowledge-base lookup failed |
+    | `INVALID_REQUEST` | Unauthorised runtime override or bad argument |
+    | `TOOL_NOT_ALLOWED` | Policy violation during tool execution (422) |
+    | `STREAMING_NOT_SUPPORTED` | Assistant does not support streaming |
+    | `MODEL_UNAVAILABLE` | Target LLM model is unavailable (503) |
+    | `LLM_PROVIDER_ERROR` | Upstream LLM provider error (502) |
+    | `INTERNAL_ERROR` | Unexpected server error or execution failure |
+  version: "1.0.0"
+  contact:
+    email: kaushik117@gmail.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+tags:
+  - name: Chat
+    description: Blocking chat execution
+  - name: Streaming
+    description: Server-Sent Events streaming chat
+  - name: Sessions
+    description: Session and message retrieval
+  - name: Admin
+    description: Runtime config inspection and cache management
+  - name: AdminAssistants
+    description: Assistant CRUD and lifecycle management
+  - name: AdminKnowledgeBases
+    description: Knowledge base CRUD and lifecycle management
+  - name: AdminPolicies
+    description: Per-assistant policy management (memory, RAG, response, safety, tools)
+  - name: AdminRoutes
+    description: Model routing rule management
+  - name: AdminPromptTemplates
+    description: Prompt template management
+  - name: AdminExecutions
+    description: Execution audit record queries
+  - name: AdminAudit
+    description: Tool and RAG retrieval audit records
+  - name: AdminSessions
+    description: Admin session management
+  - name: AdminStats
+    description: Platform-level statistics
+  - name: AdminTenantOverrides
+    description: Tenant-specific config override management
+  - name: Health
+    description: Liveness / readiness probes
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PATHS
+# ──────────────────────────────────────────────────────────────────────────────
+paths:
+
+  # ── Health ─────────────────────────────────────────────────────────────────
+
+  /api/v1/ping:
+    get:
+      tags: [Health]
+      operationId: ping
+      summary: Liveness probe
+      description: Returns service name, status, and current server timestamp.
+      responses:
+        "200":
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PingResponse"
+              example:
+                status: UP
+                service: generic-chatbot-platform
+                timestamp: "2026-05-31T10:00:00Z"
+
+  # ── Chat ───────────────────────────────────────────────────────────────────
+
+  /api/v1/chat:
+    post:
+      tags: [Chat]
+      operationId: chat
+      summary: Blocking chat
+      description: |
+        Submit a user message and receive the complete assistant reply synchronously.
+        The request must include a stable `sessionId`; if the session does not yet exist
+        it will be created automatically.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+            example:
+              assistantCode: loan-advisor
+              tenantId: rahi-prod
+              sessionId: sess-abc123
+              userId: user-xyz
+              message: "What are the eligibility criteria for a home loan?"
+              locale: en-IN
+              channel: web
+              context:
+                source: landing-page
+              runtimeOverride:
+                knowledgeBaseId: kb-home-loans
+                modelHint: gpt-4o
+                streamingEnabled: false
+      responses:
+        "200":
+          description: Successful assistant reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  # ── Streaming ──────────────────────────────────────────────────────────────
+
+  /api/v1/chat/stream:
+    post:
+      tags: [Streaming]
+      operationId: streamChat
+      summary: Streaming chat (Server-Sent Events)
+      description: |
+        Submit a user message and receive the assistant reply as a stream of
+        Server-Sent Events.
+
+        **Event types emitted on the SSE stream**
+        | `eventType` | Payload schema | Description |
+        |---|---|---|
+        | `message` | `StreamingChatChunk` | Incremental content fragment |
+        | `completion` | `StreamingCompletion` | Final event with usage, citations, and tool executions |
+        | `error` | `ApiErrorResponse` | Stream-level error; connection will be closed |
+
+        The SSE timeout is 60 seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: SSE stream — each event body is JSON
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/StreamingChatChunk"
+                  - $ref: "#/components/schemas/StreamingCompletion"
+                  - $ref: "#/components/schemas/ApiErrorResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  # ── Sessions ───────────────────────────────────────────────────────────────
+
+  /api/v1/sessions/{sessionId}:
+    get:
+      tags: [Sessions]
+      operationId: getSession
+      summary: Get session summary
+      description: Returns metadata for a single chat session by its ID.
+      parameters:
+        - $ref: "#/components/parameters/sessionIdPath"
+      responses:
+        "200":
+          description: Session found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/sessions/{sessionId}/messages:
+    get:
+      tags: [Sessions]
+      operationId: getSessionMessages
+      summary: List messages in a session
+      description: |
+        Returns the most-recent messages in the session, ordered oldest-first.
+        The `limit` query parameter controls how many messages are returned (default 50).
+      parameters:
+        - $ref: "#/components/parameters/sessionIdPath"
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 500
+          description: Maximum number of messages to return
+      responses:
+        "200":
+          description: Message list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionMessagesResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/users/{userId}/sessions:
+    get:
+      tags: [Sessions]
+      operationId: getUserSessions
+      summary: List sessions for a user
+      description: Returns all sessions for a user within a given tenant.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Identifier of the user
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Tenant scope for the query
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserSessionsResponse"
+
+  # ── Admin — Config (existing) ──────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/config:
+    get:
+      tags: [Admin]
+      operationId: getResolvedConfig
+      summary: Get resolved assistant config
+      description: |
+        Returns the fully-resolved runtime configuration for an assistant (all policies
+        merged, tenant overrides applied, cache populated). Useful for debugging and
+        UI config introspection.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: default
+          description: Tenant to resolve overrides for
+      responses:
+        "200":
+          description: Resolved config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResolvedAssistantConfig"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/v1/admin/assistants/{assistantCode}/config/cache:
+    delete:
+      tags: [Admin]
+      operationId: evictAssistantCache
+      summary: Evict config cache for an assistant
+      description: Removes the cached resolved config for a single assistant / tenant combination.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+            default: default
+      responses:
+        "204":
+          description: Cache entry evicted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/config/cache:
+    delete:
+      tags: [Admin]
+      operationId: evictAllCache
+      summary: Evict entire config cache
+      description: Clears all cached resolved configs (all assistants, all tenants).
+      responses:
+        "204":
+          description: Cache cleared
+
+  # ── Admin — Assistants ─────────────────────────────────────────────────────
+
+  /api/v1/admin/assistants:
+    get:
+      tags: [AdminAssistants]
+      operationId: listAssistants
+      summary: List assistants
+      description: Returns a paginated list of assistants, optionally filtered by active status or tenant scope.
+      parameters:
+        - name: active
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter by active status
+        - name: tenantScope
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by tenant scope
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: Assistant list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AssistantSummary"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+    post:
+      tags: [AdminAssistants]
+      operationId: createAssistant
+      summary: Create assistant
+      description: Creates a new assistant definition. The assistant is inactive until explicitly activated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssistantRequest"
+      responses:
+        "201":
+          description: Assistant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
+
+  /api/v1/admin/assistants/{assistantCode}:
+    get:
+      tags: [AdminAssistants]
+      operationId: getAssistant
+      summary: Get assistant
+      description: Returns full details for a single assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: Assistant found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminAssistants]
+      operationId: updateAssistant
+      summary: Update assistant
+      description: Updates mutable fields on an existing assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAssistantRequest"
+      responses:
+        "200":
+          description: Assistant updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/assistants/{assistantCode}/activate:
+    post:
+      tags: [AdminAssistants]
+      operationId: activateAssistant
+      summary: Activate assistant
+      description: Sets the assistant's active flag to true, making it available for chat requests.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: Assistant activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/assistants/{assistantCode}/deactivate:
+    post:
+      tags: [AdminAssistants]
+      operationId: deactivateAssistant
+      summary: Deactivate assistant
+      description: Sets the assistant's active flag to false, blocking new chat requests.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: Assistant deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistantDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Knowledge Bases ────────────────────────────────────────────────
+
+  /api/v1/admin/knowledge-bases:
+    get:
+      tags: [AdminKnowledgeBases]
+      operationId: listKnowledgeBases
+      summary: List knowledge bases
+      description: Returns all knowledge bases, optionally filtered by active status.
+      parameters:
+        - name: active
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter by active status
+      responses:
+        "200":
+          description: Knowledge base list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/KnowledgeBaseSummary"
+    post:
+      tags: [AdminKnowledgeBases]
+      operationId: createKnowledgeBase
+      summary: Create knowledge base
+      description: Registers a new knowledge base definition.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateKnowledgeBaseRequest"
+      responses:
+        "201":
+          description: Knowledge base created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/admin/knowledge-bases/{kbId}:
+    get:
+      tags: [AdminKnowledgeBases]
+      operationId: getKnowledgeBase
+      summary: Get knowledge base
+      parameters:
+        - $ref: "#/components/parameters/kbIdPath"
+      responses:
+        "200":
+          description: Knowledge base found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminKnowledgeBases]
+      operationId: updateKnowledgeBase
+      summary: Update knowledge base
+      parameters:
+        - $ref: "#/components/parameters/kbIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateKnowledgeBaseRequest"
+      responses:
+        "200":
+          description: Knowledge base updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/knowledge-bases/{kbId}/activate:
+    post:
+      tags: [AdminKnowledgeBases]
+      operationId: activateKnowledgeBase
+      summary: Activate knowledge base
+      parameters:
+        - $ref: "#/components/parameters/kbIdPath"
+      responses:
+        "200":
+          description: Knowledge base activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/knowledge-bases/{kbId}/deactivate:
+    post:
+      tags: [AdminKnowledgeBases]
+      operationId: deactivateKnowledgeBase
+      summary: Deactivate knowledge base
+      parameters:
+        - $ref: "#/components/parameters/kbIdPath"
+      responses:
+        "200":
+          description: Knowledge base deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/KnowledgeBaseDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Memory Policy ──────────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/memory-policy:
+    get:
+      tags: [AdminPolicies]
+      operationId: getMemoryPolicy
+      summary: Get memory policy
+      description: Returns the memory policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: Memory policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryPolicyDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminPolicies]
+      operationId: upsertMemoryPolicy
+      summary: Upsert memory policy
+      description: Creates or replaces the memory policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertMemoryPolicyRequest"
+      responses:
+        "200":
+          description: Memory policy saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryPolicyDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — RAG Policy ─────────────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/rag-policy:
+    get:
+      tags: [AdminPolicies]
+      operationId: getRagPolicy
+      summary: Get RAG policy
+      description: Returns the RAG policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: RAG policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagPolicyDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminPolicies]
+      operationId: upsertRagPolicy
+      summary: Upsert RAG policy
+      description: Creates or replaces the RAG policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertRagPolicyRequest"
+      responses:
+        "200":
+          description: RAG policy saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagPolicyDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Response Policy ────────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/response-policy:
+    get:
+      tags: [AdminPolicies]
+      operationId: getResponsePolicy
+      summary: Get response policy
+      description: Returns the response/output formatting policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: Response policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsePolicyDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminPolicies]
+      operationId: upsertResponsePolicy
+      summary: Upsert response policy
+      description: Creates or replaces the response policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertResponsePolicyRequest"
+      responses:
+        "200":
+          description: Response policy saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsePolicyDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Safety Policy ──────────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/safety-policy:
+    get:
+      tags: [AdminPolicies]
+      operationId: getSafetyPolicy
+      summary: Get safety policy
+      description: Returns the content safety / guardrail policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      responses:
+        "200":
+          description: Safety policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyPolicyDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminPolicies]
+      operationId: upsertSafetyPolicy
+      summary: Upsert safety policy
+      description: Creates or replaces the safety policy for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertSafetyPolicyRequest"
+      responses:
+        "200":
+          description: Safety policy saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SafetyPolicyDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Tool Policy ────────────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/tools:
+    get:
+      tags: [AdminPolicies]
+      operationId: listToolPolicies
+      summary: List tool policies
+      description: Returns all tool policy entries for an assistant, optionally filtered by enabled status.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - name: enabled
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter by enabled status
+      responses:
+        "200":
+          description: Tool policy list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ToolPolicyDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [AdminPolicies]
+      operationId: createToolPolicy
+      summary: Create tool policy
+      description: Registers a new tool in the assistant's allow-list.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateToolPolicyRequest"
+      responses:
+        "201":
+          description: Tool policy created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolPolicyDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/assistants/{assistantCode}/tools/{id}:
+    get:
+      tags: [AdminPolicies]
+      operationId: getToolPolicy
+      summary: Get tool policy
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Tool policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolPolicyDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminPolicies]
+      operationId: updateToolPolicy
+      summary: Update tool policy
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateToolPolicyRequest"
+      responses:
+        "200":
+          description: Tool policy updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolPolicyDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [AdminPolicies]
+      operationId: deleteToolPolicy
+      summary: Delete tool policy
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "204":
+          description: Tool policy deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Model Routes ───────────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/routes:
+    get:
+      tags: [AdminRoutes]
+      operationId: listModelRoutes
+      summary: List model routes
+      description: Returns all model routing rules for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - name: activeOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: When true, return only active routes
+      responses:
+        "200":
+          description: Route list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModelRouteDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [AdminRoutes]
+      operationId: createModelRoute
+      summary: Create model route
+      description: Adds a new routing rule to an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModelRouteRequest"
+      responses:
+        "201":
+          description: Route created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRouteDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/assistants/{assistantCode}/routes/{id}:
+    get:
+      tags: [AdminRoutes]
+      operationId: getModelRoute
+      summary: Get model route
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Route found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRouteDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminRoutes]
+      operationId: updateModelRoute
+      summary: Update model route
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModelRouteRequest"
+      responses:
+        "200":
+          description: Route updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelRouteDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [AdminRoutes]
+      operationId: deleteModelRoute
+      summary: Delete model route
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "204":
+          description: Route deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Prompt Templates ───────────────────────────────────────────────
+
+  /api/v1/admin/assistants/{assistantCode}/prompt-templates:
+    get:
+      tags: [AdminPromptTemplates]
+      operationId: listPromptTemplates
+      summary: List prompt templates
+      description: Returns a paginated list of prompt templates for an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: Prompt template list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PromptTemplateSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [AdminPromptTemplates]
+      operationId: createPromptTemplate
+      summary: Create prompt template
+      description: Adds a new prompt template version to an assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePromptTemplateRequest"
+      responses:
+        "201":
+          description: Prompt template created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplateDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/assistants/{assistantCode}/prompt-templates/{id}:
+    get:
+      tags: [AdminPromptTemplates]
+      operationId: getPromptTemplate
+      summary: Get prompt template
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Prompt template found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplateDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminPromptTemplates]
+      operationId: updatePromptTemplate
+      summary: Update prompt template
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePromptTemplateRequest"
+      responses:
+        "200":
+          description: Prompt template updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplateDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [AdminPromptTemplates]
+      operationId: deletePromptTemplate
+      summary: Delete prompt template
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "204":
+          description: Prompt template deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/assistants/{assistantCode}/prompt-templates/{id}/activate:
+    post:
+      tags: [AdminPromptTemplates]
+      operationId: activatePromptTemplate
+      summary: Activate prompt template
+      description: Sets this template as the active version; deactivates all others for the assistant.
+      parameters:
+        - $ref: "#/components/parameters/assistantCodePath"
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Prompt template activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PromptTemplateDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Executions ─────────────────────────────────────────────────────
+
+  /api/v1/admin/executions:
+    get:
+      tags: [AdminExecutions]
+      operationId: listExecutions
+      summary: Search execution records
+      description: Returns execution audit records with optional filters. Results are ordered by `startedAt` descending.
+      parameters:
+        - name: assistantCode
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: success
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: model
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Inclusive start of the time range (ISO-8601)
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: Exclusive end of the time range (ISO-8601)
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: Execution record list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ExecutionRecordDto"
+
+  /api/v1/admin/executions/{requestId}:
+    get:
+      tags: [AdminExecutions]
+      operationId: getExecution
+      summary: Get execution record
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Correlation request ID of the execution
+      responses:
+        "200":
+          description: Execution record found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionRecordDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Sessions ───────────────────────────────────────────────────────
+
+  /api/v1/admin/sessions:
+    get:
+      tags: [AdminSessions]
+      operationId: adminListSessions
+      summary: Search sessions (admin)
+      description: Returns a paginated list of sessions across all users and tenants.
+      parameters:
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: userId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: assistantCode
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/SessionStatus"
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AdminSessionSummary"
+
+  /api/v1/admin/sessions/{sessionId}/close:
+    post:
+      tags: [AdminSessions]
+      operationId: closeSession
+      summary: Close session
+      description: Marks the session as CLOSED; no further messages can be appended.
+      parameters:
+        - $ref: "#/components/parameters/sessionIdPath"
+      responses:
+        "200":
+          description: Session closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminSessionSummary"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/sessions/{sessionId}:
+    delete:
+      tags: [AdminSessions]
+      operationId: deleteSession
+      summary: Delete session
+      description: Permanently deletes a session and all its messages.
+      parameters:
+        - $ref: "#/components/parameters/sessionIdPath"
+      responses:
+        "204":
+          description: Session deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Stats ──────────────────────────────────────────────────────────
+
+  /api/v1/admin/stats:
+    get:
+      tags: [AdminStats]
+      operationId: getPlatformStats
+      summary: Get platform statistics
+      description: Returns aggregate counts and latency metrics for the platform.
+      responses:
+        "200":
+          description: Platform statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlatformStatsDto"
+
+  # ── Admin — Tenant Overrides ───────────────────────────────────────────────
+
+  /api/v1/admin/tenant-overrides:
+    get:
+      tags: [AdminTenantOverrides]
+      operationId: listTenantOverrides
+      summary: List tenant overrides
+      description: Returns a paginated list of tenant-specific config overrides.
+      parameters:
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: assistantCode
+          in: query
+          required: false
+          schema:
+            type: string
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: Tenant override list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TenantOverrideDto"
+    post:
+      tags: [AdminTenantOverrides]
+      operationId: createTenantOverride
+      summary: Create tenant override
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantOverrideRequest"
+      responses:
+        "201":
+          description: Tenant override created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantOverrideDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/v1/admin/tenant-overrides/{id}:
+    get:
+      tags: [AdminTenantOverrides]
+      operationId: getTenantOverride
+      summary: Get tenant override
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Tenant override found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantOverrideDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [AdminTenantOverrides]
+      operationId: updateTenantOverride
+      summary: Update tenant override
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantOverrideRequest"
+      responses:
+        "200":
+          description: Tenant override updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantOverrideDto"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [AdminTenantOverrides]
+      operationId: deleteTenantOverride
+      summary: Delete tenant override
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "204":
+          description: Tenant override deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — RAG Audit ──────────────────────────────────────────────────────
+
+  /api/v1/admin/audit/rag:
+    get:
+      tags: [AdminAudit]
+      operationId: listRagAuditRecords
+      summary: Search RAG audit records
+      description: Returns RAG retrieval audit records with optional filters.
+      parameters:
+        - name: knowledgeBaseId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: groundedMode
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: sessionId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: requestId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: RAG audit record list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RagAuditRecordDto"
+
+  /api/v1/admin/audit/rag/{id}:
+    get:
+      tags: [AdminAudit]
+      operationId: getRagAuditRecord
+      summary: Get RAG audit record
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: RAG audit record found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RagAuditRecordDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ── Admin — Tool Audit ─────────────────────────────────────────────────────
+
+  /api/v1/admin/audit/tools:
+    get:
+      tags: [AdminAudit]
+      operationId: listToolAuditRecords
+      summary: Search tool audit records
+      description: Returns tool invocation audit records with optional filters.
+      parameters:
+        - name: toolName
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: toolType
+          in: query
+          required: false
+          schema:
+            $ref: "#/components/schemas/ToolType"
+        - name: success
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: sessionId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: requestId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/pageParam"
+        - $ref: "#/components/parameters/sizeParam"
+      responses:
+        "200":
+          description: Tool audit record list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ToolAuditRecordDto"
+
+  /api/v1/admin/audit/tools/{id}:
+    get:
+      tags: [AdminAudit]
+      operationId: getToolAuditRecord
+      summary: Get tool audit record
+      parameters:
+        - $ref: "#/components/parameters/idPath"
+      responses:
+        "200":
+          description: Tool audit record found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolAuditRecordDto"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+# ──────────────────────────────────────────────────────────────────────────────
+# COMPONENTS
+# ──────────────────────────────────────────────────────────────────────────────
+components:
+
+  # ── Parameters ─────────────────────────────────────────────────────────────
+  parameters:
+    sessionIdPath:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique identifier of the chat session
+
+    assistantCodePath:
+      name: assistantCode
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique code identifying the assistant (e.g. `loan-advisor`)
+
+    kbIdPath:
+      name: kbId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Unique identifier of the knowledge base
+
+    idPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+      description: Numeric primary key of the resource
+
+    pageParam:
+      name: page
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+      description: Zero-based page number
+
+    sizeParam:
+      name: size
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 20
+        minimum: 1
+        maximum: 200
+      description: Page size
+
+  # ── Reusable Responses ─────────────────────────────────────────────────────
+  responses:
+    BadRequest:
+      description: "400 — Validation failure or bad argument"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    Forbidden:
+      description: "403 — Unauthorized runtime override"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    NotFound:
+      description: "404 — Resource not found"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    UnprocessableEntity:
+      description: "422 — Config invalid or policy violation"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    InternalServerError:
+      description: "500 — Unexpected server error"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    BadGateway:
+      description: "502 — Upstream LLM provider error"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    ServiceUnavailable:
+      description: "503 — Target model unavailable"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+    GatewayTimeout:
+      description: "504 — Chat execution timed out"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiErrorResponse"
+
+  # ── Schemas ────────────────────────────────────────────────────────────────
+  schemas:
+
+    # ── Health ────────────────────────────────────────────────────────────────
+    PingResponse:
+      type: object
+      description: Liveness probe response
+      properties:
+        status:
+          type: string
+          example: UP
+        service:
+          type: string
+          example: generic-chatbot-platform
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:00Z"
+
+    # ── Chat Request ──────────────────────────────────────────────────────────
+    ChatRequest:
+      type: object
+      description: Payload for both blocking chat and streaming chat endpoints
+      required:
+        - assistantCode
+        - tenantId
+        - sessionId
+        - userId
+        - message
+      properties:
+        assistantCode:
+          type: string
+          maxLength: 100
+          description: Identifier of the assistant to use (e.g. `loan-advisor`).
+          example: loan-advisor
+        tenantId:
+          type: string
+          maxLength: 100
+          description: Tenant identifier for multi-tenancy scoping.
+          example: rahi-prod
+        sessionId:
+          type: string
+          maxLength: 100
+          description: |
+            Stable conversation session identifier. If the session does not exist
+            it is created on first use.
+          example: sess-abc123
+        userId:
+          type: string
+          maxLength: 100
+          description: Identifier of the end user initiating the message.
+          example: user-xyz
+        message:
+          type: string
+          maxLength: 20000
+          description: The user's natural-language message / query.
+          example: "What are the eligibility criteria for a home loan?"
+        locale:
+          type: string
+          maxLength: 20
+          description: BCP-47 locale tag for language preference (e.g. `en-IN`).
+          example: en-IN
+        channel:
+          type: string
+          maxLength: 50
+          description: Originating channel (e.g. `web`, `mobile`, `whatsapp`).
+          example: web
+        context:
+          type: object
+          additionalProperties: true
+          description: Arbitrary key-value context bag passed to the prompt variable resolver and tool chain.
+          example:
+            source: landing-page
+            loanType: home
+        runtimeOverride:
+          $ref: "#/components/schemas/RuntimeOverride"
+
+    RuntimeOverride:
+      type: object
+      description: |
+        Optional per-request overrides applied on top of the assistant's stored configuration.
+        Only present fields are applied; omitted fields retain their configured values.
+      properties:
+        knowledgeBaseId:
+          type: string
+          maxLength: 100
+          description: Override the RAG knowledge base for this request.
+          example: kb-home-loans
+        memoryStoreType:
+          $ref: "#/components/schemas/MemoryStoreType"
+        enabledToolNames:
+          type: array
+          maxItems: 20
+          description: Explicit allow-list of tool names to activate for this request.
+          items:
+            type: string
+            maxLength: 100
+          example: ["loan-eligibility-check", "rate-calculator"]
+        modelHint:
+          type: string
+          maxLength: 100
+          description: Hint to the model router to prefer a specific model identifier.
+          example: gpt-4o
+        streamingEnabled:
+          type: boolean
+          description: Override the assistant's default streaming setting for this request.
+          example: false
+
+    # ── Blocking Response ─────────────────────────────────────────────────────
+    ChatResponse:
+      type: object
+      description: Complete assistant reply returned by the blocking chat endpoint
+      properties:
+        requestId:
+          type: string
+          description: Correlation ID for this request (matches MDC `requestId` in logs).
+          example: req-7f3a9c12
+        sessionId:
+          type: string
+          example: sess-abc123
+        messageId:
+          type: string
+          description: Unique ID of the persisted assistant message.
+          example: msg-88de01f4
+        assistantCode:
+          type: string
+          example: loan-advisor
+        content:
+          type: string
+          description: Full assistant reply text.
+          example: "To be eligible for a home loan you must be at least 21 years old…"
+        selectedProvider:
+          type: string
+          description: LLM provider selected by the router (e.g. `openai`, `anthropic`).
+          example: openai
+        selectedModel:
+          type: string
+          description: Model identifier used for the response.
+          example: gpt-4o
+        finishReason:
+          type: string
+          description: Model stop reason (e.g. `stop`, `length`, `tool_calls`, `content_filter`).
+          example: stop
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:01Z"
+        usage:
+          $ref: "#/components/schemas/ResponseUsage"
+        citations:
+          type: array
+          description: RAG citations supporting the response (empty when RAG was not used).
+          items:
+            $ref: "#/components/schemas/ResponseCitation"
+        toolExecutions:
+          type: array
+          description: Summary of tools invoked during this request.
+          items:
+            $ref: "#/components/schemas/ToolExecutionSummary"
+        metadata:
+          $ref: "#/components/schemas/ResponseMetadata"
+
+    ResponseUsage:
+      type: object
+      description: Token and latency accounting for a chat response
+      properties:
+        inputTokens:
+          type: integer
+          description: Number of tokens in the prompt sent to the model.
+          example: 512
+        outputTokens:
+          type: integer
+          description: Number of tokens generated by the model.
+          example: 128
+        latencyMs:
+          type: integer
+          format: int64
+          description: End-to-end latency in milliseconds.
+          example: 1240
+
+    ResponseCitation:
+      type: object
+      description: A single RAG source citation referenced in the assistant reply
+      properties:
+        sourceId:
+          type: string
+          example: doc-00412
+        sourceType:
+          type: string
+          description: Type of the source (e.g. `PDF`, `URL`, `DB_ROW`).
+          example: PDF
+        title:
+          type: string
+          example: "Home Loan Policy v3.2"
+        snippet:
+          type: string
+          description: Relevant text excerpt from the source.
+          example: "Applicants must be between 21 and 65 years of age…"
+        location:
+          type: string
+          description: Page number, URL, or other location hint.
+          example: "Page 12"
+
+    ToolExecutionSummary:
+      type: object
+      description: Lightweight audit record for a single tool invocation
+      properties:
+        toolName:
+          type: string
+          example: loan-eligibility-check
+        toolType:
+          $ref: "#/components/schemas/ToolType"
+        success:
+          type: boolean
+          example: true
+        latencyMs:
+          type: integer
+          format: int64
+          example: 320
+
+    ResponseMetadata:
+      type: object
+      description: Execution metadata attached to a chat response
+      properties:
+        ragUsed:
+          type: boolean
+          example: true
+        memoryUsed:
+          type: boolean
+          example: true
+        toolsUsed:
+          type: boolean
+          example: false
+        knowledgeBaseId:
+          type: string
+          description: Effective knowledge base ID used (after overrides).
+          example: kb-home-loans
+        promptVersion:
+          type: string
+          example: v2.1.0
+        configVersion:
+          type: string
+          example: "42"
+        streamed:
+          type: boolean
+          example: false
+
+    # ── Streaming ─────────────────────────────────────────────────────────────
+    StreamingChatChunk:
+      type: object
+      description: "A single SSE data payload for an incremental content fragment. SSE event name: `message`"
+      properties:
+        requestId:
+          type: string
+          example: req-7f3a9c12
+        sessionId:
+          type: string
+          example: sess-abc123
+        eventType:
+          type: string
+          description: Always `message` for content chunks.
+          example: message
+        contentChunk:
+          type: string
+          description: Incremental text fragment from the model.
+          example: "To be eligible"
+        sequenceNumber:
+          type: integer
+          description: Zero-based index of this chunk within the stream.
+          example: 3
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:01.123Z"
+        metadata:
+          $ref: "#/components/schemas/StreamingMetadata"
+
+    StreamingMetadata:
+      type: object
+      description: Provider and model information attached to streaming chunks
+      properties:
+        selectedModel:
+          type: string
+          example: gpt-4o
+        selectedProvider:
+          type: string
+          example: openai
+        partial:
+          type: boolean
+          description: "`true` for content chunks; `false` on the completion event."
+          example: true
+        finishReason:
+          type: string
+          description: Populated on the final chunk when the stream ends.
+          nullable: true
+          example: null
+
+    StreamingCompletion:
+      type: object
+      description: "Final SSE event sent after all content chunks. SSE event name: `completion`"
+      properties:
+        requestId:
+          type: string
+          example: req-7f3a9c12
+        sessionId:
+          type: string
+          example: sess-abc123
+        messageId:
+          type: string
+          example: msg-88de01f4
+        eventType:
+          type: string
+          description: Always `completion`.
+          example: completion
+        usage:
+          $ref: "#/components/schemas/ResponseUsage"
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResponseCitation"
+        toolExecutions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ToolExecutionSummary"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:02Z"
+
+    # ── Sessions ──────────────────────────────────────────────────────────────
+    SessionSummary:
+      type: object
+      description: Metadata for a single chat session
+      properties:
+        sessionId:
+          type: string
+          example: sess-abc123
+        tenantId:
+          type: string
+          example: rahi-prod
+        assistantCode:
+          type: string
+          example: loan-advisor
+        userId:
+          type: string
+          example: user-xyz
+        title:
+          type: string
+          example: "Home loan eligibility enquiry"
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-05-30T09:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:00Z"
+        lastMessageAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:01Z"
+        locale:
+          type: string
+          example: en-IN
+        channel:
+          type: string
+          example: web
+
+    MessageDto:
+      type: object
+      description: A single persisted message within a session
+      properties:
+        messageId:
+          type: string
+          example: msg-001
+        requestId:
+          type: string
+          example: req-7f3a9c12
+        role:
+          type: string
+          description: "Message role. One of: `USER`, `ASSISTANT`, `SYSTEM`, `TOOL`."
+          example: ASSISTANT
+        content:
+          type: string
+          example: "To be eligible for a home loan you must be at least 21 years old…"
+        selectedModel:
+          type: string
+          nullable: true
+          example: gpt-4o
+        finishReason:
+          type: string
+          nullable: true
+          example: stop
+        hasCitations:
+          type: boolean
+          example: true
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:01Z"
+
+    SessionMessagesResponse:
+      type: object
+      description: Paginated list of messages in a session
+      properties:
+        sessionId:
+          type: string
+          example: sess-abc123
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/MessageDto"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+
+    UserSessionsResponse:
+      type: object
+      description: Paginated list of sessions for a user
+      properties:
+        userId:
+          type: string
+          example: user-xyz
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionSummary"
+        page:
+          $ref: "#/components/schemas/PageMetadata"
+
+    PageMetadata:
+      type: object
+      description: Pagination envelope included on list responses
+      properties:
+        size:
+          type: integer
+          description: The requested page size (limit).
+          example: 50
+        count:
+          type: integer
+          description: The number of items actually returned.
+          example: 12
+        nextCursor:
+          type: string
+          nullable: true
+          description: Opaque cursor for fetching the next page (null if no more pages).
+          example: null
+
+    # ── Admin / Resolved Config ───────────────────────────────────────────────
+    ResolvedAssistantConfig:
+      type: object
+      description: |
+        Fully-resolved runtime configuration for an assistant, with all tenant
+        overrides applied.  Returned by the admin config endpoint.
+      properties:
+        assistantCode:
+          type: string
+          example: loan-advisor
+        tenantId:
+          type: string
+          example: rahi-prod
+        assistantName:
+          type: string
+          example: "RAHI Loan Advisor"
+        active:
+          type: boolean
+          example: true
+        configVersion:
+          type: string
+          example: "42"
+        resolvedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+        promptConfig:
+          $ref: "#/components/schemas/ResolvedPromptConfig"
+        modelRoutingConfig:
+          $ref: "#/components/schemas/ResolvedModelRoutingConfig"
+        ragConfig:
+          $ref: "#/components/schemas/ResolvedRagConfig"
+        memoryConfig:
+          $ref: "#/components/schemas/ResolvedMemoryConfig"
+        toolConfig:
+          $ref: "#/components/schemas/ResolvedToolConfig"
+        safetyConfig:
+          $ref: "#/components/schemas/ResolvedSafetyConfig"
+        responseConfig:
+          $ref: "#/components/schemas/ResolvedResponseConfig"
+
+    ResolvedPromptConfig:
+      type: object
+      description: Resolved prompt templates and guardrails
+      properties:
+        systemPromptTemplate:
+          type: string
+        developerPromptTemplate:
+          type: string
+          nullable: true
+        defaultVariables:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            assistantName: "RAHI Loan Advisor"
+            language: en
+        guardrailInstructions:
+          type: array
+          items:
+            type: string
+        promptVersion:
+          type: string
+          example: v2.1.0
+
+    ResolvedModelRoutingConfig:
+      type: object
+      description: LLM model routing configuration
+      properties:
+        defaultModel:
+          type: string
+          example: gpt-4o
+        defaultProvider:
+          type: string
+          example: openai
+        defaultMaxInputTokens:
+          type: integer
+          example: 8192
+        defaultTemperature:
+          type: number
+          format: double
+          example: 0.7
+        fallbackPolicy:
+          $ref: "#/components/schemas/FallbackPolicy"
+        routes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResolvedModelRoute"
+
+    ResolvedModelRoute:
+      type: object
+      description: A single conditional model routing rule
+      properties:
+        routeName:
+          type: string
+          example: long-context-route
+        routeType:
+          $ref: "#/components/schemas/RouteType"
+        minPromptLength:
+          type: integer
+          nullable: true
+          example: 1000
+        maxPromptLength:
+          type: integer
+          nullable: true
+          example: 50000
+        ragEnabledOnly:
+          type: boolean
+          example: false
+        toolsRequiredOnly:
+          type: boolean
+          example: false
+        structuredOutputOnly:
+          type: boolean
+          example: false
+        targetProvider:
+          type: string
+          example: anthropic
+        targetModel:
+          type: string
+          example: claude-opus-4-6
+        maxInputTokens:
+          type: integer
+          nullable: true
+          example: 200000
+        temperature:
+          type: number
+          format: double
+          nullable: true
+          example: 0.5
+        priority:
+          type: integer
+          description: Lower numbers are evaluated first.
+          example: 10
+
+    ResolvedRagConfig:
+      type: object
+      description: Retrieval-Augmented Generation configuration
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        defaultKnowledgeBaseId:
+          type: string
+          nullable: true
+          example: kb-home-loans
+        topK:
+          type: integer
+          example: 5
+        similarityThreshold:
+          type: number
+          format: double
+          example: 0.75
+        retrievalStrategy:
+          type: string
+          example: SEMANTIC
+        citationsEnabled:
+          type: boolean
+          example: true
+        groundedAnswerRequired:
+          type: boolean
+          example: false
+        metadataFilters:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            product: home-loan
+            region: IN
+
+    ResolvedMemoryConfig:
+      type: object
+      description: Conversation memory strategy configuration
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        storeType:
+          $ref: "#/components/schemas/MemoryStoreType"
+        messageWindowSize:
+          type: integer
+          example: 20
+        ttlMinutes:
+          type: integer
+          example: 1440
+        persistChatHistory:
+          type: boolean
+          example: true
+        summarizeOldMessages:
+          type: boolean
+          example: false
+
+    ResolvedToolConfig:
+      type: object
+      description: Tool execution configuration
+      properties:
+        enabled:
+          type: boolean
+          example: true
+        allowRuntimeSubsetSelection:
+          type: boolean
+          example: true
+        maxToolCallsPerRequest:
+          type: integer
+          example: 5
+        toolTimeoutMs:
+          type: integer
+          example: 10000
+        allowedTools:
+          type: array
+          items:
+            $ref: "#/components/schemas/ResolvedToolDefinition"
+
+    ResolvedToolDefinition:
+      type: object
+      description: Definition of a single allowed tool
+      properties:
+        toolName:
+          type: string
+          example: loan-eligibility-check
+        toolType:
+          $ref: "#/components/schemas/ToolType"
+        requiresApproval:
+          type: boolean
+          example: false
+        timeoutMs:
+          type: integer
+          nullable: true
+          example: 5000
+
+    ResolvedSafetyConfig:
+      type: object
+      description: Safety and content-policy configuration
+      properties:
+        blockUnknownTools:
+          type: boolean
+          example: true
+        blockWithoutRagWhenGroundedMode:
+          type: boolean
+          example: false
+        allowDirectModelAnswerWithoutContext:
+          type: boolean
+          example: true
+        maskSensitiveDataInLogs:
+          type: boolean
+          example: true
+        disallowedTopics:
+          type: array
+          items:
+            type: string
+          example: ["cryptocurrency", "gambling"]
+
+    ResolvedResponseConfig:
+      type: object
+      description: Output formatting and response style configuration
+      properties:
+        defaultTone:
+          type: string
+          example: professional
+        defaultFormat:
+          type: string
+          example: markdown
+        citationRequired:
+          type: boolean
+          example: false
+        markdownEnabled:
+          type: boolean
+          example: true
+        streamEnabled:
+          type: boolean
+          example: true
+        maxOutputTokens:
+          type: integer
+          example: 2048
+
+    # ── Admin — Assistant DTOs ────────────────────────────────────────────────
+    AssistantDto:
+      type: object
+      description: Full assistant record
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1
+        assistantCode:
+          type: string
+          example: loan-advisor
+        name:
+          type: string
+          example: "RAHI Loan Advisor"
+        description:
+          type: string
+          nullable: true
+          example: "Helps customers with loan eligibility and product queries."
+        tenantScope:
+          type: string
+          nullable: true
+          example: rahi-prod
+        configVersion:
+          type: string
+          example: "42"
+        active:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+        createdBy:
+          type: string
+          nullable: true
+          example: admin
+
+    AssistantSummary:
+      type: object
+      description: Lightweight assistant record for list responses
+      properties:
+        assistantCode:
+          type: string
+          example: loan-advisor
+        name:
+          type: string
+          example: "RAHI Loan Advisor"
+        tenantScope:
+          type: string
+          nullable: true
+          example: rahi-prod
+        configVersion:
+          type: string
+          example: "42"
+        active:
+          type: boolean
+          example: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    CreateAssistantRequest:
+      type: object
+      required:
+        - assistantCode
+        - name
+      properties:
+        assistantCode:
+          type: string
+          maxLength: 100
+          example: loan-advisor
+        name:
+          type: string
+          maxLength: 255
+          example: "RAHI Loan Advisor"
+        description:
+          type: string
+          maxLength: 1024
+          nullable: true
+          example: "Helps customers with loan eligibility and product queries."
+        tenantScope:
+          type: string
+          maxLength: 100
+          nullable: true
+          example: rahi-prod
+
+    UpdateAssistantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+          example: "RAHI Loan Advisor v2"
+        description:
+          type: string
+          maxLength: 1024
+          nullable: true
+        tenantScope:
+          type: string
+          maxLength: 100
+          nullable: true
+
+    # ── Admin — Knowledge Base DTOs ───────────────────────────────────────────
+    KnowledgeBaseDto:
+      type: object
+      description: Full knowledge base record
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 10
+        knowledgeBaseId:
+          type: string
+          example: kb-home-loans
+        name:
+          type: string
+          example: "Home Loans KB"
+        vectorStoreType:
+          type: string
+          example: PGVECTOR
+        embeddingModel:
+          type: string
+          example: text-embedding-3-small
+        connectionRef:
+          type: string
+          description: Connection string or reference to a secrets key.
+          example: "jdbc:postgresql://localhost:5432/vectors"
+        metadataFilterPolicy:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            product: home-loan
+        active:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    KnowledgeBaseSummary:
+      type: object
+      description: Lightweight knowledge base record for list responses
+      properties:
+        knowledgeBaseId:
+          type: string
+          example: kb-home-loans
+        name:
+          type: string
+          example: "Home Loans KB"
+        vectorStoreType:
+          type: string
+          example: PGVECTOR
+        active:
+          type: boolean
+          example: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    CreateKnowledgeBaseRequest:
+      type: object
+      required:
+        - knowledgeBaseId
+        - name
+        - vectorStoreType
+        - embeddingModel
+        - connectionRef
+      properties:
+        knowledgeBaseId:
+          type: string
+          maxLength: 100
+          example: kb-home-loans
+        name:
+          type: string
+          maxLength: 255
+          example: "Home Loans KB"
+        vectorStoreType:
+          type: string
+          maxLength: 50
+          example: PGVECTOR
+        embeddingModel:
+          type: string
+          maxLength: 200
+          example: text-embedding-3-small
+        connectionRef:
+          type: string
+          maxLength: 1000
+          example: "jdbc:postgresql://localhost:5432/vectors"
+        metadataFilterPolicy:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    UpdateKnowledgeBaseRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        vectorStoreType:
+          type: string
+          maxLength: 50
+        embeddingModel:
+          type: string
+          maxLength: 200
+        connectionRef:
+          type: string
+          maxLength: 1000
+        metadataFilterPolicy:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    # ── Admin — Memory Policy DTOs ────────────────────────────────────────────
+    MemoryPolicyDto:
+      type: object
+      description: Memory policy for an assistant
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 5
+        assistantCode:
+          type: string
+          example: loan-advisor
+        memoryEnabled:
+          type: boolean
+          example: true
+        storeType:
+          $ref: "#/components/schemas/MemoryStoreType"
+        messageWindowSize:
+          type: integer
+          nullable: true
+          example: 20
+        ttlMinutes:
+          type: integer
+          nullable: true
+          example: 1440
+        persistChatHistory:
+          type: boolean
+          example: true
+        summarizeOldMessages:
+          type: boolean
+          example: false
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    UpsertMemoryPolicyRequest:
+      type: object
+      required:
+        - memoryEnabled
+        - storeType
+      properties:
+        memoryEnabled:
+          type: boolean
+          example: true
+        storeType:
+          $ref: "#/components/schemas/MemoryStoreType"
+        messageWindowSize:
+          type: integer
+          minimum: 1
+          maximum: 500
+          nullable: true
+          example: 20
+        ttlMinutes:
+          type: integer
+          minimum: 1
+          nullable: true
+          example: 1440
+        persistChatHistory:
+          type: boolean
+          example: true
+        summarizeOldMessages:
+          type: boolean
+          example: false
+
+    # ── Admin — RAG Policy DTOs ───────────────────────────────────────────────
+    RagPolicyDto:
+      type: object
+      description: RAG policy for an assistant
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 3
+        assistantCode:
+          type: string
+          example: loan-advisor
+        ragEnabled:
+          type: boolean
+          example: true
+        defaultKnowledgeBaseId:
+          type: string
+          nullable: true
+          example: kb-home-loans
+        topK:
+          type: integer
+          nullable: true
+          example: 5
+        similarityThreshold:
+          type: number
+          format: double
+          nullable: true
+          example: 0.75
+        retrievalStrategy:
+          type: string
+          nullable: true
+          example: SEMANTIC
+        citationsEnabled:
+          type: boolean
+          example: true
+        groundedAnswerRequired:
+          type: boolean
+          example: false
+        metadataFilters:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    UpsertRagPolicyRequest:
+      type: object
+      required:
+        - ragEnabled
+      properties:
+        ragEnabled:
+          type: boolean
+          example: true
+        defaultKnowledgeBaseId:
+          type: string
+          maxLength: 100
+          nullable: true
+          example: kb-home-loans
+        topK:
+          type: integer
+          minimum: 1
+          maximum: 100
+          nullable: true
+          example: 5
+        similarityThreshold:
+          type: number
+          format: double
+          minimum: 0.0
+          maximum: 1.0
+          nullable: true
+          example: 0.75
+        retrievalStrategy:
+          type: string
+          maxLength: 50
+          nullable: true
+          example: SEMANTIC
+        citationsEnabled:
+          type: boolean
+          example: true
+        groundedAnswerRequired:
+          type: boolean
+          example: false
+        metadataFilters:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+
+    # ── Admin — Response Policy DTOs ──────────────────────────────────────────
+    ResponsePolicyDto:
+      type: object
+      description: Response/output formatting policy for an assistant
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 4
+        assistantCode:
+          type: string
+          example: loan-advisor
+        defaultTone:
+          type: string
+          nullable: true
+          example: professional
+        defaultFormat:
+          type: string
+          nullable: true
+          example: markdown
+        citationRequired:
+          type: boolean
+          example: false
+        markdownEnabled:
+          type: boolean
+          example: true
+        streamEnabled:
+          type: boolean
+          example: true
+        maxOutputTokens:
+          type: integer
+          nullable: true
+          example: 2048
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    UpsertResponsePolicyRequest:
+      type: object
+      properties:
+        defaultTone:
+          type: string
+          maxLength: 100
+          nullable: true
+          example: professional
+        defaultFormat:
+          type: string
+          maxLength: 50
+          nullable: true
+          example: markdown
+        citationRequired:
+          type: boolean
+          example: false
+        markdownEnabled:
+          type: boolean
+          example: true
+        streamEnabled:
+          type: boolean
+          example: true
+        maxOutputTokens:
+          type: integer
+          minimum: 64
+          maximum: 32768
+          nullable: true
+          example: 2048
+
+    # ── Admin — Safety Policy DTOs ────────────────────────────────────────────
+    SafetyPolicyDto:
+      type: object
+      description: Content safety and guardrail policy for an assistant
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 2
+        assistantCode:
+          type: string
+          example: loan-advisor
+        blockUnknownTools:
+          type: boolean
+          example: true
+        blockWithoutRagWhenGroundedMode:
+          type: boolean
+          example: false
+        allowDirectModelAnswerWithoutContext:
+          type: boolean
+          example: true
+        maskSensitiveDataInLogs:
+          type: boolean
+          example: true
+        disallowedTopics:
+          type: array
+          items:
+            type: string
+          example: ["cryptocurrency", "gambling"]
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    UpsertSafetyPolicyRequest:
+      type: object
+      properties:
+        blockUnknownTools:
+          type: boolean
+          example: true
+        blockWithoutRagWhenGroundedMode:
+          type: boolean
+          example: false
+        allowDirectModelAnswerWithoutContext:
+          type: boolean
+          example: true
+        maskSensitiveDataInLogs:
+          type: boolean
+          example: true
+        disallowedTopics:
+          type: array
+          items:
+            type: string
+          nullable: true
+          example: ["cryptocurrency", "gambling"]
+
+    # ── Admin — Tool Policy DTOs ──────────────────────────────────────────────
+    ToolPolicyDto:
+      type: object
+      description: Tool registration entry for an assistant
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 7
+        assistantCode:
+          type: string
+          example: loan-advisor
+        toolName:
+          type: string
+          example: loan-eligibility-check
+        toolType:
+          $ref: "#/components/schemas/ToolType"
+        enabled:
+          type: boolean
+          example: true
+        requiresApproval:
+          type: boolean
+          example: false
+        timeoutMs:
+          type: integer
+          nullable: true
+          example: 5000
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    CreateToolPolicyRequest:
+      type: object
+      required:
+        - toolName
+        - toolType
+      properties:
+        toolName:
+          type: string
+          maxLength: 200
+          example: loan-eligibility-check
+        toolType:
+          $ref: "#/components/schemas/ToolType"
+        enabled:
+          type: boolean
+          default: true
+          example: true
+        requiresApproval:
+          type: boolean
+          example: false
+        timeoutMs:
+          type: integer
+          minimum: 100
+          nullable: true
+          example: 5000
+
+    UpdateToolPolicyRequest:
+      type: object
+      properties:
+        toolName:
+          type: string
+          maxLength: 200
+          nullable: true
+        toolType:
+          $ref: "#/components/schemas/ToolType"
+        enabled:
+          type: boolean
+          nullable: true
+        requiresApproval:
+          type: boolean
+          nullable: true
+        timeoutMs:
+          type: integer
+          minimum: 100
+          nullable: true
+
+    # ── Admin — Model Route DTOs ──────────────────────────────────────────────
+    ModelRouteDto:
+      type: object
+      description: A model routing rule for an assistant
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 15
+        assistantCode:
+          type: string
+          example: loan-advisor
+        routeName:
+          type: string
+          example: long-context-route
+        routeType:
+          $ref: "#/components/schemas/RouteType"
+        priority:
+          type: integer
+          example: 10
+        minPromptLength:
+          type: integer
+          nullable: true
+          example: 1000
+        maxPromptLength:
+          type: integer
+          nullable: true
+          example: 50000
+        ragEnabledOnly:
+          type: boolean
+          example: false
+        toolsRequiredOnly:
+          type: boolean
+          example: false
+        structuredOutputOnly:
+          type: boolean
+          example: false
+        targetProvider:
+          type: string
+          example: anthropic
+        targetModel:
+          type: string
+          example: claude-opus-4-6
+        maxInputTokens:
+          type: integer
+          nullable: true
+          example: 200000
+        temperature:
+          type: number
+          format: double
+          nullable: true
+          example: 0.5
+        active:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+
+    CreateModelRouteRequest:
+      type: object
+      required:
+        - routeName
+        - routeType
+        - priority
+        - targetProvider
+        - targetModel
+      properties:
+        routeName:
+          type: string
+          maxLength: 100
+          example: long-context-route
+        routeType:
+          $ref: "#/components/schemas/RouteType"
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 999
+          example: 10
+        minPromptLength:
+          type: integer
+          minimum: 0
+          nullable: true
+          example: 1000
+        maxPromptLength:
+          type: integer
+          minimum: 0
+          nullable: true
+          example: 50000
+        ragEnabledOnly:
+          type: boolean
+          example: false
+        toolsRequiredOnly:
+          type: boolean
+          example: false
+        structuredOutputOnly:
+          type: boolean
+          example: false
+        targetProvider:
+          type: string
+          maxLength: 100
+          example: anthropic
+        targetModel:
+          type: string
+          maxLength: 200
+          example: claude-opus-4-6
+        maxInputTokens:
+          type: integer
+          minimum: 1
+          nullable: true
+          example: 200000
+        temperature:
+          type: number
+          format: double
+          nullable: true
+          example: 0.5
+        fallbackPolicy:
+          $ref: "#/components/schemas/FallbackPolicy"
+
+    UpdateModelRouteRequest:
+      type: object
+      properties:
+        routeName:
+          type: string
+          maxLength: 100
+          nullable: true
+        routeType:
+          $ref: "#/components/schemas/RouteType"
+        priority:
+          type: integer
+          minimum: 1
+          maximum: 999
+          nullable: true
+        minPromptLength:
+          type: integer
+          minimum: 0
+          nullable: true
+        maxPromptLength:
+          type: integer
+          minimum: 0
+          nullable: true
+        ragEnabledOnly:
+          type: boolean
+          nullable: true
+        toolsRequiredOnly:
+          type: boolean
+          nullable: true
+        structuredOutputOnly:
+          type: boolean
+          nullable: true
+        targetProvider:
+          type: string
+          maxLength: 100
+          nullable: true
+        targetModel:
+          type: string
+          maxLength: 200
+          nullable: true
+        maxInputTokens:
+          type: integer
+          minimum: 1
+          nullable: true
+        temperature:
+          type: number
+          format: double
+          nullable: true
+        fallbackPolicy:
+          $ref: "#/components/schemas/FallbackPolicy"
+
+    # ── Admin — Prompt Template DTOs ──────────────────────────────────────────
+    PromptTemplateDto:
+      type: object
+      description: Full prompt template record
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 9
+        assistantCode:
+          type: string
+          example: loan-advisor
+        version:
+          type: string
+          example: v2.1.0
+        active:
+          type: boolean
+          example: true
+        systemPromptTemplate:
+          type: string
+          description: System prompt with `{{variable}}` placeholders.
+        developerPromptTemplate:
+          type: string
+          nullable: true
+        promptVariables:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+          example:
+            assistantName: "RAHI Loan Advisor"
+        guardrailInstructions:
+          type: array
+          items:
+            type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+        createdBy:
+          type: string
+          nullable: true
+          example: admin
+
+    PromptTemplateSummary:
+      type: object
+      description: Lightweight prompt template record for list responses
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 9
+        assistantCode:
+          type: string
+          example: loan-advisor
+        version:
+          type: string
+          example: v2.1.0
+        active:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        createdBy:
+          type: string
+          nullable: true
+          example: admin
+
+    CreatePromptTemplateRequest:
+      type: object
+      required:
+        - version
+        - systemPromptTemplate
+      properties:
+        version:
+          type: string
+          maxLength: 50
+          example: v2.1.0
+        systemPromptTemplate:
+          type: string
+          maxLength: 50000
+        developerPromptTemplate:
+          type: string
+          maxLength: 20000
+          nullable: true
+        promptVariables:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        guardrailInstructions:
+          type: array
+          items:
+            type: string
+          nullable: true
+
+    UpdatePromptTemplateRequest:
+      type: object
+      properties:
+        version:
+          type: string
+          maxLength: 50
+          nullable: true
+        systemPromptTemplate:
+          type: string
+          maxLength: 50000
+          nullable: true
+        developerPromptTemplate:
+          type: string
+          maxLength: 20000
+          nullable: true
+        promptVariables:
+          type: object
+          additionalProperties:
+            type: string
+          nullable: true
+        guardrailInstructions:
+          type: array
+          items:
+            type: string
+          nullable: true
+
+    # ── Admin — Execution DTOs ────────────────────────────────────────────────
+    ExecutionRecordDto:
+      type: object
+      description: Audit record for a single chat execution
+      properties:
+        requestId:
+          type: string
+          example: req-7f3a9c12
+        sessionId:
+          type: string
+          example: sess-abc123
+        tenantId:
+          type: string
+          example: rahi-prod
+        assistantCode:
+          type: string
+          example: loan-advisor
+        userId:
+          type: string
+          example: user-xyz
+        configVersion:
+          type: string
+          nullable: true
+          example: "42"
+        selectedProvider:
+          type: string
+          nullable: true
+          example: openai
+        selectedModel:
+          type: string
+          nullable: true
+          example: gpt-4o
+        knowledgeBaseId:
+          type: string
+          nullable: true
+          example: kb-home-loans
+        memoryStoreType:
+          $ref: "#/components/schemas/MemoryStoreType"
+        enabledTools:
+          type: array
+          items:
+            type: string
+          nullable: true
+        streamingEnabled:
+          type: boolean
+          nullable: true
+          example: false
+        success:
+          type: boolean
+          example: true
+        errorCode:
+          type: string
+          nullable: true
+          example: null
+        errorMessage:
+          type: string
+          nullable: true
+          example: null
+        inputTokens:
+          type: integer
+          nullable: true
+          example: 512
+        outputTokens:
+          type: integer
+          nullable: true
+          example: 128
+        latencyMs:
+          type: integer
+          format: int64
+          nullable: true
+          example: 1240
+        startedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:00Z"
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-05-31T10:00:01.240Z"
+
+    # ── Admin — Session DTOs ──────────────────────────────────────────────────
+    AdminSessionSummary:
+      type: object
+      description: Session summary with admin-only fields (e.g. message count)
+      properties:
+        sessionId:
+          type: string
+          example: sess-abc123
+        tenantId:
+          type: string
+          example: rahi-prod
+        assistantCode:
+          type: string
+          example: loan-advisor
+        userId:
+          type: string
+          example: user-xyz
+        title:
+          type: string
+          nullable: true
+          example: "Home loan eligibility enquiry"
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        messageCount:
+          type: integer
+          example: 8
+        locale:
+          type: string
+          nullable: true
+          example: en-IN
+        channel:
+          type: string
+          nullable: true
+          example: web
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-05-30T09:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:00Z"
+        lastMessageAt:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-05-31T10:00:01Z"
+
+    # ── Admin — Stats ─────────────────────────────────────────────────────────
+    PlatformStatsDto:
+      type: object
+      description: Aggregate platform statistics
+      properties:
+        activeSessions:
+          type: integer
+          description: Number of sessions currently in ACTIVE status.
+          example: 142
+        totalSessionsToday:
+          type: integer
+          description: Total sessions created today.
+          example: 876
+        messagesLast24h:
+          type: integer
+          format: int64
+          description: Total messages exchanged in the last 24 hours.
+          example: 5420
+        avgLatencyMs:
+          type: number
+          format: double
+          description: Average end-to-end latency over the last 24 hours in milliseconds.
+          nullable: true
+          example: 1350.5
+        totalAssistants:
+          type: integer
+          format: int64
+          description: Total number of assistant definitions.
+          example: 12
+        activeAssistants:
+          type: integer
+          format: int64
+          description: Number of assistants with active=true.
+          example: 9
+        totalExecutionsToday:
+          type: integer
+          format: int64
+          description: Total chat executions today.
+          example: 5420
+        failedExecutionsToday:
+          type: integer
+          format: int64
+          description: Chat executions that ended in an error today.
+          example: 23
+        avgOutputTokens:
+          type: number
+          format: double
+          description: Average output tokens per execution today.
+          nullable: true
+          example: 134.2
+
+    # ── Admin — Tenant Override DTOs ──────────────────────────────────────────
+    TenantOverrideDto:
+      type: object
+      description: Tenant-specific config override record
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 20
+        tenantId:
+          type: string
+          example: rahi-prod
+        assistantCode:
+          type: string
+          example: loan-advisor
+        overrideType:
+          type: string
+          description: The config section being overridden (e.g. `memory`, `rag`, `response`).
+          example: memory
+        overridePayloadJson:
+          type: string
+          description: JSON-serialized override payload applied on top of the base config.
+          example: '{"messageWindowSize":10}'
+        active:
+          type: boolean
+          example: true
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-01-01T00:00:00Z"
+        updatedAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T09:55:00Z"
+        createdBy:
+          type: string
+          nullable: true
+          example: admin
+
+    CreateTenantOverrideRequest:
+      type: object
+      required:
+        - tenantId
+        - assistantCode
+        - overrideType
+        - overridePayloadJson
+      properties:
+        tenantId:
+          type: string
+          maxLength: 100
+          example: rahi-prod
+        assistantCode:
+          type: string
+          maxLength: 100
+          example: loan-advisor
+        overrideType:
+          type: string
+          description: The config section being overridden.
+          example: memory
+        overridePayloadJson:
+          type: string
+          description: JSON-serialized override payload.
+          example: '{"messageWindowSize":10}'
+
+    UpdateTenantOverrideRequest:
+      type: object
+      properties:
+        overrideType:
+          type: string
+          nullable: true
+          example: memory
+        overridePayloadJson:
+          type: string
+          nullable: true
+          example: '{"messageWindowSize":5}'
+        active:
+          type: boolean
+          nullable: true
+
+    # ── Admin — RAG Audit DTOs ────────────────────────────────────────────────
+    RagAuditRecordDto:
+      type: object
+      description: Audit record for a single RAG retrieval operation
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 1001
+        requestId:
+          type: string
+          example: req-7f3a9c12
+        sessionId:
+          type: string
+          example: sess-abc123
+        knowledgeBaseId:
+          type: string
+          example: kb-home-loans
+        retrievedDocumentCount:
+          type: integer
+          nullable: true
+          example: 4
+        topK:
+          type: integer
+          nullable: true
+          example: 5
+        similarityThreshold:
+          type: number
+          format: double
+          nullable: true
+          example: 0.75
+        latencyMs:
+          type: integer
+          format: int64
+          nullable: true
+          example: 210
+        groundedMode:
+          type: boolean
+          nullable: true
+          example: false
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:00.500Z"
+
+    # ── Admin — Tool Audit DTOs ───────────────────────────────────────────────
+    ToolAuditRecordDto:
+      type: object
+      description: Audit record for a single tool invocation
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 2001
+        requestId:
+          type: string
+          example: req-7f3a9c12
+        sessionId:
+          type: string
+          example: sess-abc123
+        toolName:
+          type: string
+          example: loan-eligibility-check
+        toolType:
+          $ref: "#/components/schemas/ToolType"
+        success:
+          type: boolean
+          example: true
+        latencyMs:
+          type: integer
+          format: int64
+          nullable: true
+          example: 320
+        errorCode:
+          type: string
+          nullable: true
+          example: null
+        errorMessage:
+          type: string
+          nullable: true
+          example: null
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:01.000Z"
+
+    # ── Error ─────────────────────────────────────────────────────────────────
+    ApiErrorResponse:
+      type: object
+      description: Standardised error envelope returned for all error responses
+      properties:
+        errorCode:
+          type: string
+          description: Machine-readable error code (see API description for full list).
+          example: VALIDATION_ERROR
+        errorMessage:
+          type: string
+          description: Human-readable description of the error.
+          example: "Request validation failed"
+        requestId:
+          type: string
+          description: Correlation ID from MDC — include in support tickets.
+          example: req-7f3a9c12
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-31T10:00:00Z"
+        fieldErrors:
+          type: array
+          description: Per-field validation errors (only present on 400 VALIDATION_ERROR).
+          items:
+            $ref: "#/components/schemas/FieldValidationError"
+
+    FieldValidationError:
+      type: object
+      description: A single field-level validation failure
+      properties:
+        field:
+          type: string
+          description: The request body field path that failed validation.
+          example: message
+        message:
+          type: string
+          description: Validation constraint message.
+          example: "must not be blank"
+
+    # ── Enumerations ──────────────────────────────────────────────────────────
+    MemoryStoreType:
+      type: string
+      description: |
+        Conversation memory storage backend.
+        - `NONE` — memory disabled
+        - `IN_MEMORY` — volatile in-process storage (lost on restart)
+        - `JDBC` — durable storage in the relational database
+      enum:
+        - NONE
+        - IN_MEMORY
+        - JDBC
+      example: JDBC
+
+    SessionStatus:
+      type: string
+      description: Lifecycle status of a chat session
+      enum:
+        - ACTIVE
+        - CLOSED
+        - EXPIRED
+      example: ACTIVE
+
+    RouteType:
+      type: string
+      description: Classification of a model routing rule
+      enum:
+        - SIMPLE
+        - KNOWLEDGE_QA
+        - TOOL_HEAVY
+        - LONG_CONTEXT
+        - STRUCTURED_OUTPUT
+      example: KNOWLEDGE_QA
+
+    ToolType:
+      type: string
+      description: |
+        Execution mechanism for a tool.
+        - `LOCAL_BEAN` — Spring bean invoked in-process
+        - `REST` — outbound HTTP call
+        - `MCP` — Model Context Protocol tool
+      enum:
+        - LOCAL_BEAN
+        - REST
+        - MCP
+      example: LOCAL_BEAN
+
+    FallbackPolicy:
+      type: string
+      description: |
+        What to do when no routing rule matches.
+        - `USE_DEFAULT_MODEL` — fall back to the configured default model
+        - `FAIL_FAST` — return an error immediately
+      enum:
+        - USE_DEFAULT_MODEL
+        - FAIL_FAST
+      example: USE_DEFAULT_MODEL
