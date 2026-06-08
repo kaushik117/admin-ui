@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router'
 import { DataTable } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -16,6 +17,7 @@ import type { KnowledgeBaseSummary, KnowledgeBaseDto } from '@/types/api'
 import type { Column } from '@/components/ui/DataTable'
 
 export default function KnowledgeBasesPage() {
+  const navigate = useNavigate()
   const [activeFilter, setActiveFilter] = useState<string>('')
   const [formOpen, setFormOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<KnowledgeBaseDto | undefined>()
@@ -107,9 +109,16 @@ export default function KnowledgeBasesPage() {
     },
     {
       header: 'Actions',
-      width: '175px',
+      width: '230px',
       accessor: (row) => (
         <div className="flex items-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => navigate(`/admin/knowledge-bases/${row.knowledgeBaseId}`)}
+          >
+            Documents
+          </Button>
           <Button size="sm" variant="ghost" onClick={() => handleEdit(row)}>
             Edit
           </Button>

@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { chatApi } from '@/api/chat'
+import { ApiError } from '@/api/client'
 import type { ChatRequest, ChatResponse, ResponseCitation, ToolExecutionSummary, ResponseMetadata } from '@/types/api'
 
 export interface LocalMessage {
@@ -69,11 +70,26 @@ export function useChat({ assistantCode, tenantId, sessionId, userId }: UseChatO
       void ctx
     },
     onError: (err: unknown, _vars, ctx) => {
-      if (ctx?.optimisticId) {
-        setMessages((prev) => prev.filter((m) => m.id !== ctx.optimisticId))
+      const apiErr = err instanceof Error ? err : null
+      const errorCode = (apiErr as ApiError | null)?.errorCode
+      const message = apiErr?.message ?? 'Failed to send message'
+
+      if (errorCode === 'NO_RELEVANT_CONTEXT') {
+        // Keep the user message and show the graceful reply as an assistant bubble
+        const assistantMsg: LocalMessage = {
+          id: `assistant-error-${Date.now()}`,
+          role: 'assistant',
+          content: message,
+          timestamp: new Date().toISOString(),
+        }
+        setMessages((prev) => [...prev, assistantMsg])
+      } else {
+        // For real errors, remove the optimistic user message and show a toast
+        if (ctx?.optimisticId) {
+          setMessages((prev) => prev.filter((m) => m.id !== ctx.optimisticId))
+        }
+        toast.error(message)
       }
-      const message = err instanceof Error ? err.message : 'Failed to send message'
-      toast.error(message)
     },
   })
 

@@ -10,7 +10,8 @@ const DashboardPage       = lazy(() => import('./dashboard/DashboardPage'))
 const AssistantsPage      = lazy(() => import('./assistants/AssistantsPage'))
 const PromptTemplatesPage = lazy(() => import('./prompt-templates/PromptTemplatesPage'))
 const ModelRoutesPage     = lazy(() => import('./model-routes/ModelRoutesPage'))
-const KnowledgeBasesPage  = lazy(() => import('./knowledge-bases/KnowledgeBasesPage'))
+const KnowledgeBasesPage       = lazy(() => import('./knowledge-bases/KnowledgeBasesPage'))
+const KnowledgeBaseDetailPage  = lazy(() => import('./knowledge-bases/KnowledgeBaseDetailPage'))
 const TenantOverridesPage  = lazy(() => import('./tenant-overrides/TenantOverridesPage'))
 const MemoryPolicyPage     = lazy(() => import('./policies/MemoryPolicyPage'))
 const RagPolicyPage        = lazy(() => import('./policies/RagPolicyPage'))
@@ -55,6 +56,7 @@ export default function AdminView() {
             <Route path="prompt-templates" element={<SuspensePage><PromptTemplatesPage /></SuspensePage>} />
             <Route path="model-routes"     element={<SuspensePage><ModelRoutesPage /></SuspensePage>} />
             <Route path="knowledge-bases"  element={<SuspensePage><KnowledgeBasesPage /></SuspensePage>} />
+            <Route path="knowledge-bases/:kbId" element={<SuspensePage><KnowledgeBaseDetailPage /></SuspensePage>} />
             <Route path="tenant-overrides"    element={<SuspensePage><TenantOverridesPage /></SuspensePage>} />
             <Route path="policies/memory"   element={<SuspensePage><MemoryPolicyPage /></SuspensePage>} />
             <Route path="policies/rag"      element={<SuspensePage><RagPolicyPage /></SuspensePage>} />

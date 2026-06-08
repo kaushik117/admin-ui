@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { configApi } from '@/api/admin/config'
 import { assistantsApi } from '@/api/admin/assistants'
@@ -59,7 +59,6 @@ function CacheEntry({
 }
 
 export default function CachePage() {
-  const qc = useQueryClient()
   const [evictAllOpen, setEvictAllOpen] = useState(false)
   const [evictTarget, setEvictTarget] = useState<AssistantSummary | null>(null)
 
@@ -69,15 +68,24 @@ export default function CachePage() {
     staleTime: 60_000,
   })
 
+  // Local set tracking which assistantCodes are still considered cached.
+  // Initialised from the full assistant list; shrinks as entries are evicted.
+  const [evictedCodes, setEvictedCodes] = useState<Set<string>>(new Set())
+
+  const cachedEntries = (assistants as AssistantSummary[]).filter(
+    (a) => !evictedCodes.has(a.assistantCode),
+  )
+
   const evictOne = useMutation({
-    mutationFn: (assistantCode: string) => configApi.evictAssistantCache(assistantCode),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['assistants'] })
-      toast.success('Cache evicted')
+    mutationFn: (a: AssistantSummary) =>
+      configApi.evictAssistantCache(a.assistantCode, a.tenantScope ?? undefined),
+    onSuccess: (_data, a) => {
+      setEvictedCodes((prev) => new Set([...prev, a.assistantCode]))
+      toast.success(`Cache evicted for ${a.assistantCode}`)
       setEvictTarget(null)
     },
     onError: (err: ApiError) => {
-      toast.error(err.message)
+      toast.error(err.message ?? 'Failed to evict cache')
       setEvictTarget(null)
     },
   })
@@ -85,12 +93,12 @@ export default function CachePage() {
   const evictAll = useMutation({
     mutationFn: () => configApi.evictAllCache(),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['assistants'] })
+      setEvictedCodes(new Set((assistants as AssistantSummary[]).map((a) => a.assistantCode)))
       toast.success('All cache entries evicted')
       setEvictAllOpen(false)
     },
     onError: (err: ApiError) => {
-      toast.error(err.message)
+      toast.error(err.message ?? 'Failed to evict cache')
       setEvictAllOpen(false)
     },
   })
@@ -110,7 +118,7 @@ export default function CachePage() {
       <div className="grid grid-cols-4 gap-3">
         <StatCard
           label="Entries Cached"
-          value={isLoading ? '—' : assistants.length}
+          value={isLoading ? '—' : cachedEntries.length}
           delta="of 500 max"
           deltaPositive={true}
           valueColor="var(--green)"
@@ -149,7 +157,8 @@ export default function CachePage() {
           <Button
             variant="danger"
             onClick={() => setEvictAllOpen(true)}
-            disabled={assistants.length === 0}
+            disabled={cachedEntries.length === 0 || evictAll.isPending}
+            loading={evictAll.isPending}
           >
             Evict All Cache
           </Button>
@@ -187,10 +196,10 @@ export default function CachePage() {
               </div>
             ))}
           </>
-        ) : assistants.length === 0 ? (
-          <EmptyState title="No cache entries" description="No assistants are registered yet." />
+        ) : cachedEntries.length === 0 ? (
+          <EmptyState title="No cache entries" description="All entries have been evicted or no assistants are registered." />
         ) : (
-          (assistants as AssistantSummary[]).map((assistant) => (
+          cachedEntries.map((assistant) => (
             <CacheEntry
               key={assistant.assistantCode}
               assistant={assistant}
@@ -207,7 +216,7 @@ export default function CachePage() {
       <ConfirmModal
         open={evictTarget !== null}
         onClose={() => setEvictTarget(null)}
-        onConfirm={() => evictTarget && evictOne.mutate(evictTarget.assistantCode)}
+        onConfirm={() => evictTarget && evictOne.mutate(evictTarget)}
         title="Evict Cache Entry"
         message={`Evict cached config for "${evictTarget?.assistantCode}"? The next request will re-resolve config from the database.`}
         confirmLabel="Evict"

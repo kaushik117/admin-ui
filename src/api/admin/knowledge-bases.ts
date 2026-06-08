@@ -4,6 +4,8 @@ import type {
   KnowledgeBaseSummary,
   CreateKnowledgeBaseRequest,
   UpdateKnowledgeBaseRequest,
+  KbDocumentSummaryDto,
+  KbDocumentUploadResponseDto,
 } from '@/types/api'
 
 export const knowledgeBasesApi = {
@@ -35,5 +37,22 @@ export const knowledgeBasesApi = {
   deactivate: (kbId: string) =>
     apiClient
       .post<KnowledgeBaseDto>(`/api/v1/admin/knowledge-bases/${kbId}/deactivate`)
+      .then((r) => r.data),
+
+  listDocuments: (kbId: string) =>
+    apiClient
+      .get<KbDocumentSummaryDto[]>(`/api/v1/admin/knowledge-bases/${kbId}/documents`)
+      .then((r) => r.data),
+
+  uploadDocument: (kbId: string, formData: FormData) =>
+    apiClient
+      .post<KbDocumentUploadResponseDto>(`/api/v1/admin/knowledge-bases/${kbId}/documents`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      .then((r) => r.data),
+
+  deleteDocument: (kbId: string, sourceTitle: string) =>
+    apiClient
+      .delete<void>(`/api/v1/admin/knowledge-bases/${kbId}/documents/${encodeURIComponent(sourceTitle)}`)
       .then((r) => r.data),
 }

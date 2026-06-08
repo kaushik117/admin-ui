@@ -95,6 +95,10 @@ export interface TenantOverrideDto { id?: number; tenantId?: string; assistantCo
 export interface CreateTenantOverrideRequest { tenantId: string; assistantCode: string; overrideType: string; overridePayloadJson: string }
 export interface UpdateTenantOverrideRequest { overrideType?: string | null; overridePayloadJson?: string | null; active?: boolean | null }
 
+// ── KB Documents ──────────────────────────────────────
+export interface KbDocumentSummaryDto { sourceTitle: string; chunkCount: number; ingestedAt?: string }
+export interface KbDocumentUploadResponseDto { knowledgeBaseId: string; sourceTitle: string; chunksIngested: number; message?: string }
+
 // ── Audit ─────────────────────────────────────────────────
 export interface RagAuditRecordDto { id?: number; requestId?: string; sessionId?: string; knowledgeBaseId?: string; retrievedDocumentCount?: number | null; topK?: number | null; similarityThreshold?: number | null; latencyMs?: number | null; groundedMode?: boolean | null; createdAt?: string }
 export interface ToolAuditRecordDto { id?: number; requestId?: string; sessionId?: string; toolName?: string; toolType?: ToolType; success?: boolean; latencyMs?: number | null; errorCode?: string | null; errorMessage?: string | null; createdAt?: string }

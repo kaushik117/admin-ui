@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { ReactNode } from 'react'
 import { configApi } from '@/api/admin/config'
+import { useMutation } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { assistantsApi } from '@/api/admin/assistants'
 import { KvGrid } from '@/components/shared/KvGrid'
 import { Badge } from '@/components/ui/Badge'
@@ -45,6 +47,14 @@ export default function ConfigInspectorPage() {
     queryFn: () => configApi.getResolvedConfig(selectedAssistant, tenantId || undefined),
     enabled: false,
     retry: false,
+  })
+
+  const evictMutation = useMutation({
+    mutationFn: () => configApi.evictAssistantCache(selectedAssistant, tenantId || undefined),
+    onSuccess: () => {
+      toast.success('Cache evicted — reload to see fresh config')
+    },
+    onError: () => toast.error('Failed to evict cache'),
   })
 
   function handleLoad() {
@@ -135,6 +145,15 @@ export default function ConfigInspectorPage() {
             onClick={handleLoad}
           >
             Load Config
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            loading={evictMutation.isPending}
+            disabled={!selectedAssistant || evictMutation.isPending}
+            onClick={() => evictMutation.mutate()}
+          >
+            Evict Cache
           </Button>
         </div>
       </div>

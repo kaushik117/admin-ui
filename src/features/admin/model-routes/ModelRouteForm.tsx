@@ -290,6 +290,7 @@ export function ModelRouteForm({ open, onClose, assistantCode, route }: ModelRou
           <Input
             label="Temperature"
             type="number"
+            step="any"
             placeholder="0.0 – 2.0 (optional)"
             hint="Leave blank to use assistant default"
             error={form.formState.errors.temperature?.message}

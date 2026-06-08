@@ -155,6 +155,7 @@ export function RagPolicyTab({ assistantCode }: RagPolicyTabProps) {
           <Input
             label="Similarity Threshold (0–1)"
             type="number"
+            step="any"
             placeholder="e.g. 0.75"
             hint="Minimum similarity score (0.0–1.0)"
             error={form.formState.errors.similarityThreshold?.message}

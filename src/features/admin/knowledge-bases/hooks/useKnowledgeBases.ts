@@ -4,6 +4,39 @@ import { knowledgeBasesApi } from '@/api/admin/knowledge-bases'
 import type { ApiError } from '@/api/client'
 import type { KnowledgeBaseSummary, CreateKnowledgeBaseRequest, UpdateKnowledgeBaseRequest } from '@/types/api'
 
+export function useKbDocuments(kbId: string) {
+  return useQuery({
+    queryKey: ['kb-documents', kbId],
+    queryFn: () => knowledgeBasesApi.listDocuments(kbId),
+    staleTime: 30_000,
+    enabled: !!kbId,
+  })
+}
+
+export function useUploadKbDocument(kbId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (formData: FormData) => knowledgeBasesApi.uploadDocument(kbId, formData),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['kb-documents', kbId] })
+      toast.success(`Uploaded "${data.sourceTitle}" — ${data.chunksIngested} chunks ingested`)
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  })
+}
+
+export function useDeleteKbDocument(kbId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (sourceTitle: string) => knowledgeBasesApi.deleteDocument(kbId, sourceTitle),
+    onSuccess: (_data, sourceTitle) => {
+      qc.invalidateQueries({ queryKey: ['kb-documents', kbId] })
+      toast.success(`"${sourceTitle}" removed from knowledge base`)
+    },
+    onError: (err: ApiError) => toast.error(err.message),
+  })
+}
+
 const QUERY_KEY = ['knowledge-bases']
 
 export function useKnowledgeBases(params?: { active?: boolean }) {
