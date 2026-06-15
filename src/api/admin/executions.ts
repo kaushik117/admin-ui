@@ -14,10 +14,14 @@ export interface ExecutionQueryParams {
 }
 
 export const executionsApi = {
-  list: (params?: ExecutionQueryParams) =>
-    apiClient
-      .get<ExecutionRecordDto[]>('/api/v1/admin/executions', { params })
-      .then((r) => r.data),
+  list: (params?: ExecutionQueryParams) => {
+    const backendParams = params
+      ? { ...params, page: params.page != null ? params.page - 1 : 0 }
+      : params
+    return apiClient
+      .get<ExecutionRecordDto[]>('/api/v1/admin/executions', { params: backendParams })
+      .then((r) => r.data)
+  },
 
   get: (requestId: string) =>
     apiClient

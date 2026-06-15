@@ -13,10 +13,14 @@ export interface AdminSessionsQueryParams {
 }
 
 export const adminSessionsApi = {
-  list: (params?: AdminSessionsQueryParams) =>
-    apiClient
-      .get<AdminSessionSummary[]>('/api/v1/admin/sessions', { params })
-      .then((r) => r.data),
+  list: (params?: AdminSessionsQueryParams) => {
+    const backendParams = params
+      ? { ...params, page: params.page != null ? params.page - 1 : 0 }
+      : params
+    return apiClient
+      .get<AdminSessionSummary[]>('/api/v1/admin/sessions', { params: backendParams })
+      .then((r) => r.data)
+  },
 
   close: (sessionId: string) =>
     apiClient

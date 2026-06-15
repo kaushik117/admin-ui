@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 import { TopNav } from '@/components/layout/TopNav'
 import { Drawer } from '@/components/ui/Drawer'
@@ -9,6 +9,7 @@ import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { SessionSidebar } from './SessionSidebar'
 import { ChatArea } from './ChatArea'
 import { ContextPanel } from './ContextPanel'
+import { adminSessionsApi } from '@/api/admin/admin-sessions'
 import type { ChatRequest } from '@/types/api'
 
 interface SessionEntry {
@@ -26,7 +27,7 @@ export default function ChatView() {
 
   const isDesktop = useMediaQuery('(min-width: 1280px)')
 
-  const { messages, send, isPending, clearMessages, appendMessage, removeMessage } = useChat({
+  const { messages, send, isPending, clearMessages, appendMessage, removeMessage, loadMessages } = useChat({
     assistantCode,
     tenantId,
     sessionId: activeSessionId ?? '',
@@ -35,6 +36,7 @@ export default function ChatView() {
 
   const { streamingText, isStreaming, startStream, cancel } = useSSEStream()
 
+  // When a new session is created via the store, add it to the list, activate it, and clear messages
   useEffect(() => {
     if (!sessionId) return
     setSessions((prev) => {
@@ -42,22 +44,51 @@ export default function ChatView() {
       return [{ id: sessionId, assistantCode, createdAt: new Date().toISOString() }, ...prev]
     })
     setActiveSessionId(sessionId)
-  }, [sessionId, assistantCode])
+    clearMessages()
+  }, [sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  function handleSelectSession(id: string) {
-    if (id !== activeSessionId) {
-      setActiveSessionId(id)
-      clearMessages()
-      if (isStreaming) cancel()
+  // Load existing sessions from the backend when assistant changes
+  const fetchSessions = useCallback(async (code: string) => {
+    try {
+      const data = await adminSessionsApi.list({ assistantCode: code, status: 'ACTIVE', size: 50 })
+      if (data.length > 0) {
+        setSessions(
+          data.map((s) => ({
+            id: s.sessionId!,
+            assistantCode: s.assistantCode ?? code,
+            createdAt: s.createdAt ?? new Date().toISOString(),
+          }))
+        )
+        setActiveSessionId(data[0].sessionId!)
+        await loadMessages(data[0].sessionId!)
+      }
+    } catch {
+      // backend unreachable — fall through to newSession below
     }
-    setSidebarOpen(false)
-  }
+  }, [loadMessages])
 
   useEffect(() => {
-    if (assistantCode && sessions.length === 0) {
-      newSession()
-    }
+    if (!assistantCode) return
+    setSessions([])
+    setActiveSessionId(null)
+    clearMessages()
+    void fetchSessions(assistantCode).then(() => {
+      // if no sessions were loaded, start a new one
+      setSessions((prev) => {
+        if (prev.length === 0) { newSession(); return prev }
+        return prev
+      })
+    })
   }, [assistantCode]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleSelectSession = useCallback(async (id: string) => {
+    if (id !== activeSessionId) {
+      setActiveSessionId(id)
+      if (isStreaming) cancel()
+      await loadMessages(id)
+    }
+    setSidebarOpen(false)
+  }, [activeSessionId, isStreaming, cancel, loadMessages])
 
   async function handleStreamSend(text: string) {
     if (!text.trim() || !assistantCode || !activeSessionId) return
@@ -132,7 +163,8 @@ export default function ChatView() {
     <SessionSidebar
       sessions={sessions}
       activeSessionId={activeSessionId}
-      onSelectSession={handleSelectSession}
+      onSelectSession={(id) => { void handleSelectSession(id) }}
+      onNewSession={() => { if (isStreaming) cancel(); newSession() }}
     />
   )
 
@@ -158,7 +190,7 @@ export default function ChatView() {
         )}
 
         {/* Chat area — full width on tablet, flex-1 on desktop */}
-        <div className="flex-1 min-w-0 overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col min-h-0">
           <ChatArea
             sessionId={activeSessionId}
             assistantCode={assistantCode}

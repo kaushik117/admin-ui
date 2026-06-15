@@ -14,10 +14,11 @@ interface Props {
   sessions: SessionEntry[]
   activeSessionId: string | null
   onSelectSession: (id: string) => void
+  onNewSession: () => void
 }
 
-export function SessionSidebar({ sessions, activeSessionId, onSelectSession }: Props) {
-  const { assistantCode, setAssistant, newSession } = useChatStore()
+export function SessionSidebar({ sessions, activeSessionId, onSelectSession, onNewSession }: Props) {
+  const { assistantCode, setAssistant } = useChatStore()
 
   const { data: assistants = [] } = useQuery({
     queryKey: ['assistants', 'active'],
@@ -82,7 +83,7 @@ export function SessionSidebar({ sessions, activeSessionId, onSelectSession }: P
             cursor: assistantCode ? 'pointer' : 'not-allowed',
             opacity: assistantCode ? 1 : 0.4,
           }}
-          onClick={() => { if (assistantCode) newSession() }}
+          onClick={() => { if (assistantCode) onNewSession() }}
           disabled={!assistantCode}
         >
           + New

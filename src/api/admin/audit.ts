@@ -25,20 +25,28 @@ export interface RagAuditQueryParams {
 }
 
 export const auditApi = {
-  listToolAuditRecords: (params?: ToolAuditQueryParams) =>
-    apiClient
-      .get<ToolAuditRecordDto[]>('/api/v1/admin/audit/tools', { params })
-      .then((r) => r.data),
+  listToolAuditRecords: (params?: ToolAuditQueryParams) => {
+    const backendParams = params
+      ? { ...params, page: params.page != null ? params.page - 1 : 0 }
+      : params
+    return apiClient
+      .get<ToolAuditRecordDto[]>('/api/v1/admin/audit/tools', { params: backendParams })
+      .then((r) => r.data)
+  },
 
   getToolAuditRecord: (id: number) =>
     apiClient
       .get<ToolAuditRecordDto>(`/api/v1/admin/audit/tools/${id}`)
       .then((r) => r.data),
 
-  listRagAuditRecords: (params?: RagAuditQueryParams) =>
-    apiClient
-      .get<RagAuditRecordDto[]>('/api/v1/admin/audit/rag', { params })
-      .then((r) => r.data),
+  listRagAuditRecords: (params?: RagAuditQueryParams) => {
+    const backendParams = params
+      ? { ...params, page: params.page != null ? params.page - 1 : 0 }
+      : params
+    return apiClient
+      .get<RagAuditRecordDto[]>('/api/v1/admin/audit/rag', { params: backendParams })
+      .then((r) => r.data)
+  },
 
   getRagAuditRecord: (id: number) =>
     apiClient

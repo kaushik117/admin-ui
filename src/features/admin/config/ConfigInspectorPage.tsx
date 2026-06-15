@@ -147,7 +147,7 @@ export default function ConfigInspectorPage() {
             Load Config
           </Button>
           <Button
-            variant="secondary"
+            variant="ghost"
             size="md"
             loading={evictMutation.isPending}
             disabled={!selectedAssistant || evictMutation.isPending}

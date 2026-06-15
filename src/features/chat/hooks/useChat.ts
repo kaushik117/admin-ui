@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { chatApi } from '@/api/chat'
+import { sessionsApi } from '@/api/sessions'
 import { ApiError } from '@/api/client'
 import type { ChatRequest, ChatResponse, ResponseCitation, ToolExecutionSummary, ResponseMetadata } from '@/types/api'
 
@@ -112,5 +113,22 @@ export function useChat({ assistantCode, tenantId, sessionId, userId }: UseChatO
     setMessages((prev) => prev.filter((m) => m.id !== id))
   }, [])
 
-  return { messages, send, isPending, clearMessages, appendMessage, removeMessage }
+  const loadMessages = useCallback(async (sessionId: string) => {
+    try {
+      const resp = await sessionsApi.getMessages(sessionId)
+      const loaded: LocalMessage[] = (resp.messages ?? []).map((m) => ({
+        id: m.messageId ?? `msg-${Math.random()}`,
+        role: (m.role?.toUpperCase() === 'ASSISTANT' ? 'assistant' : 'user') as 'user' | 'assistant',
+        content: m.content ?? '',
+        timestamp: m.timestamp ?? new Date().toISOString(),
+        selectedModel: m.selectedModel ?? undefined,
+        finishReason: m.finishReason ?? undefined,
+      }))
+      setMessages(loaded)
+    } catch {
+      // session may have no messages yet — leave empty
+    }
+  }, [])
+
+  return { messages, send, isPending, clearMessages, appendMessage, removeMessage, loadMessages }
 }

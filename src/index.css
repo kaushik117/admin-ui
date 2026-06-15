@@ -57,9 +57,17 @@ body {
   transition: background var(--transition), color var(--transition);
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
+* { scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 3px; }
+::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text); }
+
+.chat-messages { scrollbar-width: thin; scrollbar-color: var(--muted) transparent; }
+.chat-messages::-webkit-scrollbar { width: 6px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
+.chat-messages::-webkit-scrollbar-thumb:hover { background: var(--text); }
 
 /* Inline code — matches prototype `code { ... }` */
 code {

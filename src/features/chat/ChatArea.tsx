@@ -124,7 +124,7 @@ export function ChatArea({
     /* .chat-area */
     <div
       style={{
-        flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, height: '100%',
         background: 'var(--bg)', borderRight: '1px solid var(--border)',
         transition: 'background var(--transition)',
       }}
@@ -177,8 +177,9 @@ export function ChatArea({
 
       {/* .messages */}
       <div
+        className="chat-messages"
         style={{
-          flex: 1, overflowY: 'auto', padding: '20px',
+          flex: 1, overflowY: 'scroll', padding: '20px', minHeight: 0,
           display: 'flex', flexDirection: 'column', gap: '18px',
         }}
       >
